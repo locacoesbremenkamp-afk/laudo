@@ -334,7 +334,7 @@ export default function Finance() {
                   <input
                     type="text"
                     value={financeData.clientName}
-                    onChange={(e) => setFinanceData({...financeData, clientName: e.target.value})}
+                    onChange={(e) => setFinanceData(prev => ({ ...prev, clientName: e.target.value }))}
                     className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl outline-none focus:border-blue-500 transition-all text-sm"
                   />
                 </div>
@@ -344,7 +344,7 @@ export default function Finance() {
                   <input
                     type="text"
                     value={financeData.cnpj}
-                    onChange={(e) => setFinanceData({...financeData, cnpj: e.target.value})}
+                    onChange={(e) => setFinanceData(prev => ({ ...prev, cnpj: e.target.value }))}
                     className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl outline-none focus:border-blue-500 transition-all text-sm"
                   />
                 </div>
@@ -576,8 +576,8 @@ export default function Finance() {
                   <div className="flex flex-col sm:flex-row sm:justify-between gap-4 p-4 bg-zinc-50 rounded-xl border border-zinc-100">
                     <div>
                       <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Cliente</p>
-                      <p className="font-bold text-zinc-900 text-sm sm:text-base">{financeData.clientName}</p>
-                      <p className="text-[10px] sm:text-xs text-zinc-500">CNPJ: {financeData.cnpj}</p>
+                      <p className="font-bold text-zinc-900 text-sm sm:text-base break-words leading-tight">{financeData.clientName || '---'}</p>
+                      <p className="text-[10px] sm:text-xs text-zinc-500">CNPJ: {financeData.cnpj || '---'}</p>
                     </div>
                     <div className="sm:text-right">
                       <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Solicitante</p>
@@ -764,3 +764,4 @@ export default function Finance() {
     </div>
   );
 }
+
