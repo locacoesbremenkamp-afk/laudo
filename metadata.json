@@ -1,0 +1,7 @@
+{
+  "name": "Copy of Rzv Engenharia - Gestão de Visitas",
+  "description": "Sistema de gestão de chamados e visitas técnicas para Rzv Engenharia.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
