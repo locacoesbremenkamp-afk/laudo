@@ -93,16 +93,16 @@ export default function Finance() {
     }
   };
 
-  const handleCompanyTypeChange = (type: 'serralheiro' | 'serralheira' | 'other') => {
+  const handleCompanyTypeChange = (type: 'serralheiro' | 'serralheiro' | 'other') => {
     let clientName = "";
     let cnpj = "";
     
     if (type === 'serralheiro') {
       clientName = "Casa do Serralheiro";
-      cnpj = "00.000.000/0001-00"; // Placeholder
+      cnpj = "12.982.965/0003-78"; // Placeholder
     } else if (type === 'serralheira') {
-      clientName = "Casa da Serralheira";
-      cnpj = "11.111.111/0001-11"; // Placeholder
+      clientName = "Casa da Serralheiro";
+      cnpj = "12.982.965/0003-78"; // Placeholder
     }
 
     setFinanceData(prev => ({
