@@ -146,6 +146,16 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  app.patch("/api/requests/:id", async (req, res) => {
+    try {
+      const { error } = await supabase.from('requests').update({ ...req.body, updated_at: new Date().toISOString() }).eq('id', req.params.id);
+      if (error) return res.status(500).json({ error: error.message });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/generate-ai", async (req, res) => {
     try {
       const apiKey = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
