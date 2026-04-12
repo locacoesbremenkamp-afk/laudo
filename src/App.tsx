@@ -42,11 +42,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isSupabaseConfigured) {
-      setError("Supabase não configurado. Verifique as variáveis de ambiente.");
-      return;
-    }
-
     setAuthLoading(true);
     setError(null);
 
@@ -355,6 +350,8 @@ function AppContent({ isSidebarOpen, setIsSidebarOpen }: { isSidebarOpen: boolea
         
         <Routes>
           <Route path="/" element={<LandingPage />} />
+          <Route path="/demo-dashboard" element={<Dashboard />} />
+          <Route path="/demo-agreement/:id" element={<AgreementTerm />} />
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/request" element={<PublicRequestForm />} />
           <Route path="/request/:id" element={<ProtectedRoute><RequestDetail /></ProtectedRoute>} />
