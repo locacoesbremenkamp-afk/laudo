@@ -16,6 +16,7 @@ interface Request {
   address: string;
   description: string;
   budget_number?: string;
+  claimant_name?: string;
 }
 
 interface OrderItem {
@@ -512,7 +513,9 @@ export default function Finance() {
                               >
                                 <option value="">Sem laudo</option>
                                 {requests.map(req => (
-                                  <option key={req.id} value={req.id}>#{req.id} - {req.company_name}</option>
+                                  <option key={req.id} value={req.id}>
+                                    #{req.id} - {req.budget_number ? `Laudo: ${req.budget_number}` : 'Sem laudo'} {req.claimant_name ? `- ${req.claimant_name}` : ''}
+                                  </option>
                                 ))}
                               </select>
                             </div>
@@ -595,7 +598,15 @@ export default function Finance() {
                           </span>
                         </div>
                         {item.requestId && (
-                          <p className="text-[10px] text-blue-500 font-bold uppercase tracking-wider">Ref: Laudo #{item.requestId}</p>
+                          <div className="text-[10px] text-blue-500 font-bold uppercase tracking-wider space-y-0.5">
+                            <p>Ref: Laudo #{item.requestId}</p>
+                            {requests.find(r => String(r.id) === item.requestId)?.budget_number && (
+                              <p>Nº Laudo: {requests.find(r => String(r.id) === item.requestId)?.budget_number}</p>
+                            )}
+                            {requests.find(r => String(r.id) === item.requestId)?.claimant_name && (
+                              <p>Reclamante: {requests.find(r => String(r.id) === item.requestId)?.claimant_name}</p>
+                            )}
+                          </div>
                         )}
                       </div>
                     ))}
@@ -708,9 +719,19 @@ export default function Finance() {
                       <td className="px-4 py-4 align-top">
                         <p className="text-sm font-bold text-zinc-900 mb-1 whitespace-pre-wrap">{item.description}</p>
                         {item.requestId && (
-                          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-[10px] font-black uppercase tracking-wider">
-                            <FileText size={10} />
-                            Ref: Laudo #{item.requestId}
+                          <div className="space-y-1">
+                            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-[10px] font-black uppercase tracking-wider">
+                              <FileText size={10} />
+                              Ref: Laudo #{item.requestId}
+                            </div>
+                            <div className="text-[9px] text-blue-600 font-bold space-y-0.5 ml-0">
+                              {requests.find(r => String(r.id) === item.requestId)?.budget_number && (
+                                <p>Nº Laudo: {requests.find(r => String(r.id) === item.requestId)?.budget_number}</p>
+                              )}
+                              {requests.find(r => String(r.id) === item.requestId)?.claimant_name && (
+                                <p>Reclamante: {requests.find(r => String(r.id) === item.requestId)?.claimant_name}</p>
+                              )}
+                            </div>
                           </div>
                         )}
                       </td>
