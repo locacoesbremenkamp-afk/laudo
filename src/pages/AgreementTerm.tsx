@@ -4,18 +4,20 @@ import {
   ArrowLeft, 
   Save, 
   Printer, 
-  Loader2,
-  ShieldCheck,
-  ShieldAlert,
-  UserCheck,
-  FileText,
-  CloudUpload,
-  Copy
+  Plus,
+  Trash2,
+  Eye,
+  EyeOff,
+  Download,
+  Palette,
+  DollarSign,
+  Package
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toPng } from 'html-to-image';
 import { jsPDF } from "jspdf";
+import { motion, AnimatePresence } from "motion/react";
 
 interface Request {
   id: number;
@@ -27,41 +29,42 @@ interface Request {
   agreement?: any;
 }
 
+interface ResolutionItem {
+  id: string;
+  type: "painting" | "credit" | "material";
+  description: string;
+  value?: string;
+}
+
 export default function AgreementTerm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [request, setRequest] = useState<Request | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [uploadingPdf, setUploadingPdf] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const agreementRef = useRef<HTMLDivElement>(null);
 
+  const [resolutionItems, setResolutionItems] = useState<ResolutionItem[]>([]);
+  const [showAddResolution, setShowAddResolution] = useState(false);
+  const [selectedType, setSelectedType] = useState<"painting" | "credit" | "material">("painting");
+  const [resolutionInput, setResolutionInput] = useState("");
+
   const [agreementData, setAgreementData] = useState({
-    first_party: "CASA DO SERRALHEIRO LTDA",
     first_party_cnpj: "12.982.965/0001-06",
     first_party_address: "BR 262, Campo Grande, Cariacica/ES",
-    claimant_name: "",
-    claimant_id: "",
+    claimant_name: "Renzo Vetorazzi",
+    claimant_cnpj: "50110906000137",
     claimant_address: "",
-    is_legal_validated: false,
     budget_number: "",
-    total_value: "0,00",
-    total_value_text: "zero reais",
-    commercial_ref: "fornecimento de materiais",
-    product_description: "produtos de engenharia",
-    service_description: "assistência técnica e reparos",
-    payment_conditions: "Sem ônus para o cliente",
-    execution_responsible: "Equipe Técnica",
-    deadline: "30 dias úteis",
-    forum: "Cariacica, ES",
-    sig1_name: "CASA DO SERRALHEIRO",
-    sig1_role: "Primeira Acordante",
-    sig2_name: "",
-    sig2_role: "Segunda Acordante",
+    total_value: "",
+    signature_date: format(new Date(), "dd/MM/yyyy"),
+    representative_name: "",
+    representative_cpf: "",
     witness1_name: "",
-    witness1_id: "",
+    witness1_cpf: "",
     witness2_name: "",
-    witness2_id: ""
+    witness2_cpf: ""
   });
 
   useEffect(() => {
@@ -73,18 +76,24 @@ export default function AgreementTerm() {
       const res = await fetch(`/api/requests/${id}`);
       const data = await res.json();
       setRequest(data);
+      
       if (data.agreement) {
-        setAgreementData({
-          ...agreementData,
+        setAgreementData(prev => ({
+          ...prev,
           ...data.agreement
-        });
+        }));
+        if (data.agreement.resolutionItems) {
+          setResolutionItems(data.agreement.resolutionItems);
+        }
       } else {
-        // Pre-fill with request data if available
+        // Puxar dados automaticamente do cadastro
         setAgreementData(prev => ({
           ...prev,
           claimant_name: data.company_name || "",
           claimant_address: data.address || "",
-          budget_number: data.budget_number || ""
+          claimant_cnpj: data.cnpj || "",
+          budget_number: data.budget_number || "",
+          total_value: data.total_value || ""
         }));
       }
     } catch (error) {
@@ -94,515 +103,670 @@ export default function AgreementTerm() {
     }
   };
 
+  const addResolutionItem = () => {
+    if (!resolutionInput.trim()) {
+      alert("Por favor, preencha o campo!");
+      return;
+    }
+    const newItem: ResolutionItem = {
+      id: Date.now().toString(),
+      type: selectedType,
+      description: selectedType === "material" ? resolutionInput : "",
+      value: selectedType !== "material" ? resolutionInput : ""
+    };
+    setResolutionItems([...resolutionItems, newItem]);
+    setResolutionInput("");
+  };
+
+  const removeResolutionItem = (id: string) => {
+    setResolutionItems(resolutionItems.filter(item => item.id !== id));
+  };
+
+  const updateResolutionItem = (id: string, updates: Partial<ResolutionItem>) => {
+    setResolutionItems(resolutionItems.map(item => 
+      item.id === id ? { ...item, ...updates } : item
+    ));
+  };
+
+  const getResolutionTitle = (type: string) => {
+    switch(type) {
+      case "painting": return "Serviço de Pintura";
+      case "credit": return "Crédito na Casa do Serralheiro";
+      case "material": return "Envio de Material";
+      default: return "Resolução";
+    }
+  };
+
+  const getResolutionIcon = (type: string) => {
+    switch(type) {
+      case "painting": return <Palette size={16} />;
+      case "credit": return <DollarSign size={16} />;
+      case "material": return <Package size={16} />;
+      default: return <Plus size={16} />;
+    }
+  };
+
+  const buildClauseTwo = () => {
+    if (resolutionItems.length === 0) return "Não especificado";
+    
+    return resolutionItems.map(item => {
+      switch(item.type) {
+        case "painting":
+          return `• Serviço de pintura de recobrimento na superfície afetada${item.value ? ` com custo de R$ ${item.value}` : ''}`;
+        case "credit":
+          return `• Crédito na Casa do Serralheiro no valor de R$ ${item.value || 'a definir'}`;
+        case "material":
+          return `• Envio de material: ${item.description}`;
+        default:
+          return item.description;
+      }
+    }).join("\n");
+  };
+
+  const generatePDF = async () => {
+    if (!agreementRef.current) return;
+    try {
+      const imgData = await toPng(agreementRef.current, {
+        pixelRatio: 2,
+        backgroundColor: '#ffffff',
+        quality: 0.95,
+      });
+      
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgProps = pdf.getImageProperties(imgData);
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      
+      const imgWidth = pageWidth;
+      const imgHeight = (imgProps.height / imgProps.width) * imgWidth;
+      
+      const totalPages = Math.ceil(imgHeight / pageHeight);
+      
+      for (let i = 0; i < totalPages; i++) {
+        if (i > 0) pdf.addPage();
+        
+        const yOffset = -(i * pageHeight);
+        pdf.addImage(imgData, 'PNG', 0, yOffset, imgWidth, imgHeight);
+      }
+      
+      pdf.save(`Termo-Acordo-${id}.pdf`);
+    } catch (error: any) {
+      alert(`❌ Erro ao gerar PDF:\n\n${error?.message}`);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
-      await fetch("/api/agreements", {
+      const res = await fetch(`/api/requests/${id}/agreement`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          request_id: id,
-          ...agreementData
+          ...agreementData,
+          resolutionItems
         })
       });
-      alert("Termo de acordo salvo com sucesso!");
-    } catch (error) {
-      console.error(error);
+
+      if (!res.ok) throw new Error("Erro ao salvar");
+      alert("✅ Termo de acordo salvo com sucesso!\n\nLocal: Banco de dados do cliente (Chamado #" + id + ")\n\nOs dados estão registrados no cadastro e podem ser consultados a qualquer momento.");
+    } catch (error: any) {
+      alert(`❌ Erro ao salvar: ${error?.message}`);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleSaveAsTemplate = () => {
-    localStorage.setItem('agreement_template', JSON.stringify(agreementData));
-    alert("Acordo salvo como modelo padrão!");
-  };
-
-  const handleLoadTemplate = () => {
-    const template = localStorage.getItem('agreement_template');
-    if (template) {
-      setAgreementData(JSON.parse(template));
-      alert("Modelo carregado com sucesso!");
-    } else {
-      alert("Nenhum modelo salvo encontrado.");
-    }
-  };
-
-  const handleDownloadPdf = () => {
-    window.print();
-  };
-
-  const handleSaveToServer = async () => {
-    if (!agreementRef.current) return;
-    setUploadingPdf(true);
-    try {
-      // 1. Generate PDF
-      const imgData = await toPng(agreementRef.current, {
-        pixelRatio: 2,
-        skipFonts: true,
-        backgroundColor: '#ffffff',
-        cacheBust: true,
-      });
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const imgProps = pdf.getImageProperties(imgData);
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      const pdfDataUri = pdf.output('datauristring');
-
-      // 2. Upload to Server
-      const fileName = `agreement-${id}-${Date.now()}.pdf`;
-
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file: pdfDataUri, fileName })
-      });
-
-      if (!res.ok) throw new Error("Failed to upload");
-      const { url } = await res.json();
-
-      alert(`Termo salvo no servidor com sucesso!\nURL: ${url}`);
-    } catch (error) {
-      console.error('Error saving to server:', error);
-      alert('Erro ao salvar no servidor.');
-    } finally {
-      setUploadingPdf(false);
-    }
-  };
-
-  if (loading) return <div className="p-8 text-center text-zinc-500">Carregando...</div>;
-  if (!request) return <div className="p-8 text-center text-zinc-500">Chamado não encontrado.</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-4xl mx-auto p-4 sm:p-8 space-y-6 sm:space-y-8 print:p-0 print:m-0">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
-        <button 
-          onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-zinc-500 hover:text-zinc-900 transition-colors w-fit"
-        >
-          <ArrowLeft size={20} />
-          <span className="font-medium">Voltar</span>
-        </button>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] sm:text-xs font-bold border ${agreementData.is_legal_validated ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-amber-50 text-amber-600 border-amber-200'}`}>
-            {agreementData.is_legal_validated ? <ShieldCheck size={14} /> : <ShieldAlert size={14} />}
-            {agreementData.is_legal_validated ? 'VALIDADO' : 'PENDENTE'}
+    <div className="min-h-screen bg-gradient-to-br from-zinc-50 to-zinc-100 p-4 sm:p-6">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6 bg-white rounded-lg p-4 shadow-sm border border-zinc-200">
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => navigate(-1)}
+            className="p-2 hover:bg-zinc-100 rounded-lg transition-colors"
+          >
+            <ArrowLeft size={20} className="text-zinc-600" />
+          </button>
+          <div>
+            <h1 className="text-lg sm:text-2xl font-bold text-zinc-900">
+              Termo de Acordo
+            </h1>
+            {request && (
+              <p className="text-sm text-zinc-500">
+                {request?.company_name} • Chamado #{request?.id}
+              </p>
+            )}
           </div>
-          <button 
-            onClick={handleSave}
-            disabled={saving}
-            className="flex-1 sm:flex-none bg-blue-700 text-white px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium hover:bg-blue-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowPreview(!showPreview)}
+            className="p-2 bg-zinc-100 hover:bg-zinc-200 rounded-lg transition-colors flex items-center gap-2"
+            title={showPreview ? "Editar" : "Pré-visualizar"}
           >
-            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            Salvar
-          </button>
-          <button 
-            onClick={handleSaveAsTemplate}
-            className="flex-1 sm:flex-none bg-zinc-900 text-white px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium hover:bg-zinc-800 transition-colors flex items-center justify-center gap-2"
-          >
-            <Copy size={16} />
-            Salvar como Modelo
-          </button>
-          <button 
-            onClick={handleLoadTemplate}
-            className="flex-1 sm:flex-none bg-white border border-zinc-200 text-zinc-600 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium hover:bg-zinc-50 transition-colors flex items-center justify-center gap-2"
-          >
-            Carregar Modelo
-          </button>
-          <button 
-            onClick={handleDownloadPdf}
-            className="flex-1 sm:flex-none bg-white border border-zinc-200 text-zinc-600 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium hover:bg-zinc-50 transition-colors flex items-center justify-center gap-2"
-          >
-            <Printer size={16} />
-            Imprimir / PDF
-          </button>
-          <button 
-            onClick={handleSaveToServer}
-            disabled={uploadingPdf}
-            className="w-full sm:w-auto bg-blue-50 text-blue-700 border border-blue-200 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium hover:bg-blue-100 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            {uploadingPdf ? <Loader2 size={16} className="animate-spin" /> : <CloudUpload size={16} />}
-            Salvar no Supabase
+            {showPreview ? <EyeOff size={18} /> : <Eye size={18} />}
           </button>
         </div>
       </div>
 
-      <div className="bg-white border border-zinc-200 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm space-y-6 print:hidden">
-        <div className="flex items-center gap-2 border-b border-zinc-100 pb-4">
-          <UserCheck className="text-blue-700" size={20} />
-          <h2 className="font-bold text-zinc-900">Dados do Reclamante & Validação</h2>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Nome da 1ª Acordante</label>
-            <input 
-              type="text"
-              className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
-              value={agreementData.first_party}
-              onChange={e => setAgreementData({...agreementData, first_party: e.target.value})}
-              placeholder="Nome da empresa"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">CNPJ da 1ª Acordante</label>
-            <input 
-              type="text"
-              className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
-              value={agreementData.first_party_cnpj}
-              onChange={e => setAgreementData({...agreementData, first_party_cnpj: e.target.value})}
-              placeholder="00.000.000/0001-00"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Endereço da 1ª Acordante</label>
-            <input 
-              type="text"
-              className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
-              value={agreementData.first_party_address}
-              onChange={e => setAgreementData({...agreementData, first_party_address: e.target.value})}
-              placeholder="Endereço completo"
-            />
-          </div>
-          
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Nome da 2ª Acordante</label>
-            <input 
-              type="text"
-              className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
-              value={agreementData.claimant_name}
-              onChange={e => setAgreementData({...agreementData, claimant_name: e.target.value})}
-              placeholder="Nome completo"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">CPF/CNPJ da 2ª Acordante</label>
-            <input 
-              type="text"
-              className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
-              value={agreementData.claimant_id}
-              onChange={e => setAgreementData({...agreementData, claimant_id: e.target.value})}
-              placeholder="000.000.000-00"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Endereço da 2ª Acordante</label>
-            <input 
-              type="text"
-              className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
-              value={agreementData.claimant_address}
-              onChange={e => setAgreementData({...agreementData, claimant_address: e.target.value})}
-              placeholder="Endereço completo"
-            />
-          </div>
-        </div>
-
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-zinc-100">
-          <div className="space-y-1">
-            <p className="text-sm font-semibold text-zinc-900">Validação Jurídica</p>
-            <p className="text-xs text-zinc-500">Marque se este termo já foi revisado e aprovado pelo departamento jurídico.</p>
-          </div>
-          <button 
-            onClick={() => setAgreementData({...agreementData, is_legal_validated: !agreementData.is_legal_validated})}
-            className={`w-full sm:w-auto px-4 py-2 rounded-lg text-sm font-bold transition-all ${agreementData.is_legal_validated ? 'bg-blue-700 text-white shadow-lg shadow-blue-700/20' : 'bg-zinc-100 text-zinc-400 hover:bg-zinc-200'}`}
-          >
-            {agreementData.is_legal_validated ? 'Validado' : 'Validar Agora'}
-          </button>
-        </div>
-
-        <div className="pt-4 border-t border-zinc-100 space-y-4">
-          <div className="flex items-center gap-2">
-            <FileText className="text-blue-700" size={20} />
-            <h2 className="font-bold text-zinc-900">Detalhes do Acordo</h2>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Referência Comercial</label>
-              <input 
-                type="text"
-                className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
-                value={agreementData.commercial_ref}
-                onChange={e => setAgreementData({...agreementData, commercial_ref: e.target.value})}
-                placeholder="Ex: fornecimento de telhas"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Valor do Acordo (R$)</label>
-              <input 
-                type="text"
-                className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
-                value={agreementData.total_value}
-                onChange={e => setAgreementData({...agreementData, total_value: e.target.value})}
-                placeholder="0,00"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Serviços Incluídos</label>
-              <textarea 
-                rows={2}
-                className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none resize-none"
-                value={agreementData.service_description}
-                onChange={e => setAgreementData({...agreementData, service_description: e.target.value})}
-                placeholder="Descreva os serviços que serão realizados"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Condições de Pagamento</label>
-              <textarea 
-                rows={2}
-                className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none resize-none"
-                value={agreementData.payment_conditions}
-                onChange={e => setAgreementData({...agreementData, payment_conditions: e.target.value})}
-                placeholder="Ex: Sem custo, ou parcelamento em 3x..."
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Responsáveis pela Execução</label>
-              <input 
-                type="text"
-                className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
-                value={agreementData.execution_responsible}
-                onChange={e => setAgreementData({...agreementData, execution_responsible: e.target.value})}
-                placeholder="Nome da equipe ou empresa"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Prazo de Execução</label>
-              <input 
-                type="text"
-                className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
-                value={agreementData.deadline}
-                onChange={e => setAgreementData({...agreementData, deadline: e.target.value})}
-                placeholder="Ex: 30 dias úteis"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="pt-4 border-t border-zinc-100 space-y-4">
-          <div className="flex items-center gap-2">
-            <UserCheck className="text-blue-700" size={20} />
-            <h2 className="font-bold text-zinc-900">Assinaturas (Áreas de Responsabilidade)</h2>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Testemunha 1 (Nome)</label>
-              <input 
-                type="text"
-                className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
-                value={agreementData.witness1_name}
-                onChange={e => setAgreementData({...agreementData, witness1_name: e.target.value})}
-                placeholder="Nome da testemunha"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Testemunha 1 (CPF)</label>
-              <input 
-                type="text"
-                className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
-                value={agreementData.witness1_id}
-                onChange={e => setAgreementData({...agreementData, witness1_id: e.target.value})}
-                placeholder="000.000.000-00"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Testemunha 2 (Nome)</label>
-              <input 
-                type="text"
-                className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
-                value={agreementData.witness2_name}
-                onChange={e => setAgreementData({...agreementData, witness2_name: e.target.value})}
-                placeholder="Nome da testemunha"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Testemunha 2 (CPF)</label>
-              <input 
-                type="text"
-                className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
-                value={agreementData.witness2_id}
-                onChange={e => setAgreementData({...agreementData, witness2_id: e.target.value})}
-                placeholder="000.000.000-00"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Assinatura 1</label>
-              <input 
-                type="text"
-                className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none mb-2"
-                value={agreementData.sig1_name}
-                onChange={e => setAgreementData({...agreementData, sig1_name: e.target.value})}
-                placeholder="Nome"
-              />
-              <input 
-                type="text"
-                className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
-                value={agreementData.sig1_role}
-                onChange={e => setAgreementData({...agreementData, sig1_role: e.target.value})}
-                placeholder="Cargo / Papel"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Assinatura 2</label>
-              <input 
-                type="text"
-                className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none mb-2"
-                value={agreementData.sig2_name}
-                onChange={e => setAgreementData({...agreementData, sig2_name: e.target.value})}
-                placeholder="Nome (Deixe vazio para usar o da 2ª Acordante)"
-              />
-              <input 
-                type="text"
-                className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
-                value={agreementData.sig2_role}
-                onChange={e => setAgreementData({...agreementData, sig2_role: e.target.value})}
-                placeholder="Cargo / Papel"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 print:overflow-visible print:mx-0 print:px-0">
-        <div ref={agreementRef} className="bg-white border border-zinc-200 rounded-2xl sm:rounded-3xl shadow-xl overflow-hidden print:border-none print:shadow-none min-w-[320px] print:w-full print:rounded-none">
-          <div className="p-8 sm:p-12 space-y-8 font-serif text-zinc-900 leading-relaxed">
-            <div className="text-center space-y-2 border-b border-zinc-200 pb-6">
-              <h1 className="text-xl sm:text-2xl font-bold uppercase tracking-tight">TERMO DE ACORDO EXTRAJUDICIAL</h1>
-              <p className="text-xs text-zinc-500 font-sans">Resolução em quitação referente ao chamado #{request.id}</p>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Painel de Edição */}
+        {!showPreview && (
+          <div className="lg:col-span-1 space-y-4">
+            {/* Seção: Dados da Empresa */}
+            <div className="bg-white rounded-lg p-4 shadow-sm border border-zinc-200">
+              <h3 className="font-bold text-zinc-900 mb-4 text-sm uppercase tracking-wider">
+                Dados do Cliente (2ª Acordante)
+              </h3>
+              <p className="text-xs text-zinc-500 italic mb-3">💡 Campos opcionais - deixe em branco se não aplicável</p>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 block mb-1">Empresa/Pessoa</label>
+                  <input
+                    type="text"
+                    value={agreementData.claimant_name}
+                    onChange={(e) => setAgreementData({...agreementData, claimant_name: e.target.value})}
+                    className="w-full px-3 py-2 border border-zinc-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 block mb-1">CNPJ ou CPF</label>
+                  <input
+                    type="text"
+                    value={agreementData.claimant_cnpj}
+                    onChange={(e) => setAgreementData({...agreementData, claimant_cnpj: e.target.value})}
+                    placeholder="00.000.000/0000-00 ou 000.000.000-00"
+                    className="w-full px-3 py-2 border border-zinc-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 block mb-1">Endereço</label>
+                  <textarea
+                    value={agreementData.claimant_address}
+                    onChange={(e) => setAgreementData({...agreementData, claimant_address: e.target.value})}
+                    className="w-full px-3 py-2 border border-zinc-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm resize-none"
+                    rows={2}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 block mb-1">Valor Total (R$)</label>
+                  <input
+                    type="text"
+                    value={agreementData.total_value}
+                    onChange={(e) => setAgreementData({...agreementData, total_value: e.target.value})}
+                    className="w-full px-3 py-2 border border-zinc-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  />
+                </div>
+              </div>
             </div>
 
-            <div className="space-y-6 text-sm sm:text-base text-justify">
-              <p>
-                Pelo presente instrumento particular, de um lado <strong className="uppercase">{agreementData.first_party}</strong>, pessoa jurídica de direito privado, inscrita no CNPJ sob nº <strong>{agreementData.first_party_cnpj}</strong>, com sede na {agreementData.first_party_address}, doravante denominada <strong>PRIMEIRA ACORDANTE</strong>, e de outro lado:
-              </p>
+            {/* Seção: Resoluções */}
+            <div className="bg-white rounded-lg p-4 shadow-sm border border-zinc-200">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-zinc-900 text-sm uppercase tracking-wider">
+                  Formas de Resolução
+                </h3>
+                <button
+                  onClick={() => setShowAddResolution(!showAddResolution)}
+                  className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1 text-xs font-bold"
+                >
+                  <Plus size={14} /> Adicionar
+                </button>
+              </div>
 
-              <p>
-                <strong className="uppercase">{agreementData.claimant_name || "____________________"}</strong>,<br />
-                pessoa física / jurídica, inscrita no CPF/CNPJ nº <strong>{agreementData.claimant_id || "____________________"}</strong>, com endereço em {agreementData.claimant_address || "____________________"}, doravante denominado <strong>SEGUNDO ACORDANTE</strong>,
-              </p>
-
-              <p>
-                têm entre si justo e acordado o presente TERMO DE ACORDO EXTRAJUDICIAL, que se regerá pelas cláusulas e condições seguintes.
-              </p>
-
-              <div className="py-4 text-center">⸻</div>
-
-              <section className="space-y-4">
-                <h3 className="font-bold uppercase tracking-wider text-center">I – DO OBJETO DA TRANSAÇÃO E DO PRESENTE ACORDO</h3>
-                
-                <div className="space-y-4">
-                  <p>
-                    <strong>Cláusula 1ª</strong><br />
-                    As partes mantiveram relação comercial referente a <strong>{agreementData.commercial_ref || "____________________"}</strong>, vinculada ao pedido/contrato nº <strong>{agreementData.budget_number || "______"}</strong>, no valor total de <strong>R$ {agreementData.total_value || "_________"}</strong>, referente a <strong>{agreementData.product_description || "____________________"}</strong>.
-                  </p>
-
-                  <p>
-                    <strong>Cláusula 2ª</strong><br />
-                    Para resolução do presente impasse e quitação da relação comercial, as partes ajustam que:
-                  </p>
-
-                  <div className="bg-zinc-50/50 p-4 rounded-lg border border-zinc-100 italic whitespace-pre-wrap">
-                    {agreementData.service_description || "______________________\n\n______________________\n\n______________________"}
+              {showAddResolution && (
+                <motion.div 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="mb-4 p-4 bg-gradient-to-br from-blue-50 via-blue-50 to-indigo-50 border-2 border-blue-300 rounded-lg space-y-4 shadow-md"
+                >
+                  <div>
+                    <label className="text-xs font-bold text-zinc-700 block mb-3 uppercase tracking-widest">Selecione o tipo de resolução</label>
+                    <div className="grid grid-cols-1 gap-3">
+                      {[
+                        { id: "painting", label: "🎨 Serviço de Pintura", desc: "Pintura de recobrimento na superfície" },
+                        { id: "credit", label: "💵 Crédito na Casa", desc: "Crédito em conta para futuras compras" },
+                        { id: "material", label: "📦 Envio de Material", desc: "Fornecimento de material específico" }
+                      ].map(({ id, label, desc }) => (
+                        <button
+                          key={id}
+                          onClick={() => setSelectedType(id as any)}
+                          className={`p-3 rounded-lg text-sm font-bold transition-all border-2 text-left ${
+                            selectedType === id
+                              ? "bg-white border-blue-600 text-blue-700 shadow-md ring-2 ring-blue-200"
+                              : "bg-white border-blue-200 text-zinc-700 hover:border-blue-400"
+                          }`}
+                        >
+                          <div className="font-bold">{label}</div>
+                          <div className="text-xs text-zinc-500 font-normal">{desc}</div>
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
-                  <p>
-                    Podendo envolver, entre outras medidas:
-                  </p>
-                  <ul className="list-disc pl-6 space-y-1">
-                    <li>substituição de produto</li>
-                    <li>prestação de serviço</li>
-                    <li>pintura, reparo ou manutenção</li>
-                    <li>pagamento parcial ou integral</li>
-                    <li>outra forma de composição acordada entre as partes.</li>
-                  </ul>
-                </div>
-              </section>
+                  <div className="border-t-2 border-blue-200 pt-4">
+                    <label className="text-xs font-bold text-zinc-700 block mb-2 uppercase tracking-widest">
+                      {selectedType === "material" ? "Descrição do material" : "Valor/Detalhe"}
+                    </label>
+                    <input
+                      type="text"
+                      value={resolutionInput}
+                      onChange={(e) => setResolutionInput(e.target.value)}
+                      placeholder={
+                        selectedType === "credit" ? "Ex: 500,00" : 
+                        selectedType === "painting" ? "Ex: pintura epóxi completa" :
+                        "Descrever o material..."
+                      }
+                      className="w-full px-4 py-3 border-2 border-blue-300 bg-white rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none text-sm font-medium"
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          addResolutionItem();
+                          setShowAddResolution(false);
+                        }
+                      }}
+                    />
+                  </div>
 
-              <div className="py-4 text-center">⸻</div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        addResolutionItem();
+                        setShowAddResolution(false);
+                      }}
+                      className="flex-1 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-bold text-sm shadow-md hover:shadow-lg"
+                    >
+                      ✓ Adicionar Resolução
+                    </button>
+                    <button
+                      onClick={() => setShowAddResolution(false)}
+                      className="flex-1 py-3 bg-zinc-300 text-zinc-700 rounded-lg hover:bg-zinc-400 transition-colors font-bold text-sm"
+                    >
+                      ✕ Cancelar
+                    </button>
+                  </div>
+                </motion.div>
+              )}
 
-              <section className="space-y-4">
-                <p>
-                  <strong>Cláusula 3ª</strong><br />
-                  Caso o presente termo não seja assinado pelo segundo acordante no prazo de 3 (três) dias úteis, contados da data de seu envio, o presente acordo será considerado automaticamente sem efeito, não gerando qualquer obrigação para a PRIMEIRA ACORDANTE.
+              <div className="space-y-3">
+                <AnimatePresence>
+                  {resolutionItems.map((item) => (
+                    <motion.div
+                      key={item.id}
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      className="p-3 bg-gradient-to-r from-blue-50 to-blue-100 border border-blue-200 rounded-lg space-y-2"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2 text-blue-700 font-bold text-sm">
+                          {getResolutionIcon(item.type)}
+                          {getResolutionTitle(item.type)}
+                        </div>
+                        <button
+                          onClick={() => removeResolutionItem(item.id)}
+                          className="p-1 text-red-600 hover:bg-red-100 rounded transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+
+                      {item.type === "material" ? (
+                        <textarea
+                          value={item.description}
+                          onChange={(e) => updateResolutionItem(item.id, { description: e.target.value })}
+                          placeholder="Descrever o material a ser enviado..."
+                          className="w-full px-2 py-1.5 border border-blue-300 bg-white rounded text-xs resize-none focus:ring-2 focus:ring-blue-500 outline-none"
+                          rows={2}
+                        />
+                      ) : (
+                        <input
+                          type="text"
+                          value={item.value}
+                          onChange={(e) => updateResolutionItem(item.id, { value: e.target.value })}
+                          placeholder={item.type === "credit" ? "Ex: 500,00" : "Valor ou descrição"}
+                          className="w-full px-2 py-1.5 border border-blue-300 bg-white rounded text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      )}
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+
+              {resolutionItems.length === 0 && !showAddResolution && (
+                <p className="text-xs text-zinc-500 italic text-center py-4">
+                  Nenhuma resolução adicionada ainda
                 </p>
-              </section>
+              )}
+            </div>
 
-              <div className="py-4 text-center">⸻</div>
-
-              <section className="space-y-4">
-                <h3 className="font-bold uppercase tracking-wider text-center">II – DAS CONDIÇÕES GERAIS E DISPOSIÇÕES FINAIS</h3>
-                
-                <div className="space-y-4">
-                  <p>
-                    <strong>Cláusula 4ª</strong><br />
-                    Cumpridas as obrigações estabelecidas neste termo, as partes dão entre si plena, geral e irrevogável quitação, nada mais podendo reclamar uma da outra a qualquer título, relativamente ao objeto tratado neste instrumento.
-                  </p>
-
-                  <p>
-                    <strong>Cláusula 5ª</strong><br />
-                    Para dirimir quaisquer controvérsias oriundas deste instrumento, as partes elegem o foro da comarca de <strong>{agreementData.forum}</strong>, renunciando a qualquer outro, por mais privilegiado que seja.
-                  </p>
+            {/* Seção: Assinaturas */}
+            <div className="bg-white rounded-lg p-4 shadow-sm border border-zinc-200">
+              <h3 className="font-bold text-zinc-900 mb-4 text-sm uppercase tracking-wider">
+                Assinaturas
+              </h3>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 block mb-1">Representante</label>
+                  <input
+                    type="text"
+                    value={agreementData.representative_name}
+                    onChange={(e) => setAgreementData({...agreementData, representative_name: e.target.value})}
+                    className="w-full px-3 py-2 border border-zinc-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  />
                 </div>
-              </section>
-
-              <div className="py-4 text-center">⸻</div>
-
-              <p>
-                E, por estarem justas e acordadas, assinam o presente instrumento em 02 (duas) vias de igual teor, na presença das testemunhas abaixo.
-              </p>
-
-              <p className="pt-4">
-                Cariacica/ES, {format(new Date(), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}.
-              </p>
-
-              <div className="py-4 text-center">⸻</div>
-
-              <div className="pt-12 grid grid-cols-1 sm:grid-cols-2 gap-16">
-                <div className="space-y-4">
-                  <div className="border-b border-zinc-900 pb-1"></div>
-                  <div className="text-center">
-                    <p className="font-bold uppercase text-sm">{agreementData.first_party}</p>
-                    <p className="text-xs text-zinc-500">Primeira Acordante</p>
-                  </div>
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 block mb-1">CPF</label>
+                  <input
+                    type="text"
+                    value={agreementData.representative_cpf}
+                    onChange={(e) => setAgreementData({...agreementData, representative_cpf: e.target.value})}
+                    placeholder="000.000.000-00"
+                    className="w-full px-3 py-2 border border-zinc-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  />
                 </div>
-
-                <div className="space-y-4">
-                  <div className="border-b border-zinc-900 pb-1"></div>
-                  <div className="text-center">
-                    <p className="font-bold uppercase text-sm">{agreementData.sig2_name || agreementData.claimant_name || "SEGUNDO ACORDANTE"}</p>
-                    <p className="text-xs text-zinc-500">Segundo Acordante</p>
-                    {agreementData.claimant_id && <p className="text-[10px] text-zinc-400">CPF/CNPJ: {agreementData.claimant_id}</p>}
-                  </div>
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 block mb-1">Testemunha 1</label>
+                  <input
+                    type="text"
+                    value={agreementData.witness1_name}
+                    onChange={(e) => setAgreementData({...agreementData, witness1_name: e.target.value})}
+                    className="w-full px-3 py-2 border border-zinc-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  />
                 </div>
-
-                <div className="space-y-4">
-                  <div className="border-b border-zinc-900 pb-1"></div>
-                  <div className="text-center">
-                    <p className="font-bold uppercase text-sm">{agreementData.witness1_name || "TESTEMUNHA 1"}</p>
-                    {agreementData.witness1_id && <p className="text-[10px] text-zinc-400">CPF: {agreementData.witness1_id}</p>}
-                  </div>
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 block mb-1">CPF</label>
+                  <input
+                    type="text"
+                    value={agreementData.witness1_cpf}
+                    onChange={(e) => setAgreementData({...agreementData, witness1_cpf: e.target.value})}
+                    placeholder="000.000.000-00"
+                    className="w-full px-3 py-2 border border-zinc-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  />
                 </div>
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 block mb-1">Testemunha 2</label>
+                  <input
+                    type="text"
+                    value={agreementData.witness2_name}
+                    onChange={(e) => setAgreementData({...agreementData, witness2_name: e.target.value})}
+                    className="w-full px-3 py-2 border border-zinc-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 block mb-1">CPF</label>
+                  <input
+                    type="text"
+                    value={agreementData.witness2_cpf}
+                    onChange={(e) => setAgreementData({...agreementData, witness2_cpf: e.target.value})}
+                    placeholder="000.000.000-00"
+                    className="w-full px-3 py-2 border border-zinc-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  />
+                </div>
+              </div>
+            </div>
 
-                <div className="space-y-4">
-                  <div className="border-b border-zinc-900 pb-1"></div>
-                  <div className="text-center">
-                    <p className="font-bold uppercase text-sm">{agreementData.witness2_name || "TESTEMUNHA 2"}</p>
-                    {agreementData.witness2_id && <p className="text-[10px] text-zinc-400">CPF: {agreementData.witness2_id}</p>}
-                  </div>
+            {/* Botões de Ação */}
+            <div className="grid grid-cols-2 gap-3 sticky bottom-4">
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center justify-center gap-2 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors font-bold disabled:opacity-50"
+              >
+                <Save size={18} />
+                <span className="hidden sm:inline">Salvar</span>
+              </button>
+              <button
+                onClick={generatePDF}
+                className="flex items-center justify-center gap-2 bg-emerald-600 text-white py-3 rounded-lg hover:bg-emerald-700 transition-colors font-bold"
+              >
+                <Download size={18} />
+                <span className="hidden sm:inline">PDF</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Pré-visualização */}
+        {showPreview && (
+          <div className="lg:col-span-1 space-y-4">
+            <div className="bg-white rounded-lg p-4 border border-zinc-200 shadow-sm">
+              <h3 className="font-bold text-zinc-900 mb-4 text-sm text-center uppercase">Pré-visualização</h3>
+              <div className="space-y-2 text-xs text-zinc-600">
+                <div>
+                  <strong className="text-zinc-900">Cliente:</strong>
+                  <p>{agreementData.claimant_name || "—"}</p>
+                </div>
+                <div>
+                  <strong className="text-zinc-900">CNPJ:</strong>
+                  <p>{agreementData.claimant_cnpj || "—"}</p>
+                </div>
+                <div>
+                  <strong className="text-zinc-900">Endereço:</strong>
+                  <p>{agreementData.claimant_address || "—"}</p>
+                </div>
+                <div className="border-t pt-2">
+                  <strong className="text-zinc-900">Resoluções:</strong>
+                  <p className="whitespace-pre-wrap text-zinc-700 mt-1">{buildClauseTwo()}</p>
                 </div>
               </div>
             </div>
           </div>
-          <div className="pt-8 text-center space-y-1">
-            <p className="text-[10px] text-zinc-400 uppercase tracking-widest">
-              Documento gerado em {format(new Date(), "dd/MM/yyyy 'às' HH:mm")}
-            </p>
-            <p className="text-[9px] text-blue-600/50 font-bold uppercase tracking-widest">
-              Responsável Técnico: ES-044985/D
-            </p>
+        )}
+
+        {/* Documento Renderizado */}
+        <div className="lg:col-span-2">
+          <div 
+            ref={agreementRef}
+            className="bg-white rounded-lg sm:p-8 shadow-lg border border-zinc-200 print:rounded-none print:shadow-none print:border-0"
+            style={{ 
+              fontFamily: 'Georgia, serif',
+              padding: '20mm 15mm',
+            }}
+          >
+            <style>{`
+              @media print {
+                @page {
+                  margin: 20mm 15mm 20mm 15mm;
+                  size: A4;
+                }
+                
+                body {
+                  margin: 0;
+                  padding: 0;
+                }
+                
+                .print\\:rounded-none {
+                  border-radius: 0 !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                }
+                
+                div {
+                  orphans: 3;
+                  widows: 3;
+                }
+                
+                p {
+                  orphans: 2;
+                  widows: 2;
+                  margin: 0.5rem 0;
+                  line-height: 1.6;
+                }
+                
+                h1, h2 {
+                  page-break-after: avoid;
+                  orphans: 2;
+                  widows: 2;
+                }
+                
+                .page-break {
+                  page-break-after: always;
+                }
+              }
+            `}</style>
+            {/* Cabeçalho */}
+            <div className="text-center mb-8 border-b-2 border-zinc-300 pb-4 print:mb-6 print:pb-3 print:border-zinc-400">
+              <h1 className="text-lg sm:text-xl font-bold mb-2 print:text-base print:mb-1">TERMO DE ACORDO EXTRAJUDICIAL</h1>
+              <p className="text-xs sm:text-sm text-zinc-600 print:text-xs print:m-0 print:text-zinc-700">Resolução de conflitos e quitação de relações extrajudicial</p>
+            </div>
+
+            {/* Corpo do documento */}
+            <div className="space-y-4 text-xs sm:text-sm text-justify leading-relaxed text-zinc-800 print:space-y-3 print:text-xs print:leading-snug">
+              {/* Preâmbulo */}
+              {agreementData.claimant_name ? (
+                <p className="print:m-0">
+                  Pelo presente instrumento particular, de um lado, <strong>CASA DO SERRALHEIRO LTDA</strong>, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº <strong>{agreementData.first_party_cnpj}</strong>, com sede na <strong>{agreementData.first_party_address}</strong>, e de outro lado, <strong>{agreementData.claimant_name}</strong>, inscrita no CNPJ/CPF sob o nº <strong>{agreementData.claimant_cnpj || "_______________"}</strong>, com sede à <strong>{agreementData.claimant_address || "_______________"}</strong>, ajustam o presente termo de acordo com efeitos de resolução e quitação de relações jurídicas, que se regerá pelas condições seguintes:
+                </p>
+              ) : (
+                <p className="print:m-0">
+                  Pelo presente instrumento particular, <strong>CASA DO SERRALHEIRO LTDA</strong>, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº <strong>{agreementData.first_party_cnpj}</strong>, com sede na <strong>{agreementData.first_party_address}</strong>, ajusta o presente termo de acordo com efeitos de resolução e quitação de relações jurídicas, que se regerá pelas condições seguintes:
+                </p>
+              )}
+
+              {/* Seções */}
+              <div className="border-t-2 border-zinc-300 pt-4 mt-4 print:border-t print:pt-3 print:mt-3">
+                <h2 className="font-bold text-center uppercase text-xs sm:text-sm mb-3 print:text-xs print:mb-2 print:leading-tight">
+                  I - DO OBJETO DA TRANSAÇÃO E DO PRESENTE ACORDO
+                </h2>
+
+                <div className="space-y-3 print:space-y-2">
+                  <div>
+                    <p className="font-bold mb-1 print:mb-0.5">Cláusula 1ª.</p>
+                    <p className="print:m-0">
+                      As partes acima qualificadas mantiveram relação jurídica de compra e venda de produtos, vinculada ao orçamento/chamado nº <strong>{agreementData.budget_number || "_______________"}</strong>, no valor total de <strong>R$ {agreementData.total_value || "_______________"}</strong>.
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="font-bold mb-1 print:mb-0.5">Cláusula 2ª. - FORMAS DE RESOLUÇÃO</p>
+                    <p className="mb-2 print:m-0 print:mb-1">
+                      Para a resolução do presente impasse e a quitação da relação em questão, a primeira acordante compromete-se a realizar:
+                    </p>
+                    <div className="ml-4 space-y-1 text-xs sm:text-sm print:ml-3 print:space-y-0.5 print:text-xs print:leading-tight">
+                      {resolutionItems.length > 0 ? (
+                        <>
+                          {resolutionItems.map((item, idx) => (
+                            <p key={item.id} className="text-zinc-700 print:m-0">
+                              {idx + 1}. {getResolutionTitle(item.type)}
+                              {item.type === "material" && (
+                                <>: <span className="font-semibold">{item.description || "a definir"}</span></>
+                              )}
+                              {item.type === "credit" && (
+                                <>: <span className="font-semibold">R$ {item.value || "a definir"}</span></>
+                              )}
+                              {item.type === "painting" && item.value && (
+                                <>: <span className="font-semibold">{item.value}</span></>
+                              )}
+                            </p>
+                          ))}
+                        </>
+                      ) : (
+                        <p className="italic text-zinc-500">_______________________________________________</p>
+                      )}
+                    </div>
+                    <p className="mt-2 print:m-0 print:mt-1">
+                      no prazo de até <strong>30 dias úteis</strong> após a assinatura do presente termo, conforme estipulado entre as partes, de modo a atender integralmente as condições acordadas.
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="font-bold mb-1 print:mb-0.5">Cláusula 3ª.</p>
+                    <p className="print:m-0">
+                      Fica acordado entre as partes que, caso o presente termo não seja assinado pela segunda acordante no prazo de 7 dias úteis a contar da data de envio para sua devida assinatura, o referido acordo será automaticamente desconsiderado, sendo interpretado como renúncia ao mesmo, não gerando, assim, qualquer vínculo ou obrigação entre as partes.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Disposições Finais */}
+              <div className="border-t-2 border-zinc-300 pt-4 print:border-t print:pt-3">
+                <h2 className="font-bold text-center uppercase text-xs sm:text-sm mb-3 print:text-xs print:mb-2">
+                  II - DAS CONDIÇÕES GERAIS E DAS DISPOSIÇÕES FINAIS
+                </h2>
+
+                <div className="space-y-3 print:space-y-2">
+                  <div>
+                    <p className="font-bold mb-1 print:mb-0.5">Cláusula 4ª.</p>
+                    <p className="print:m-0">
+                      As partes acordantes, de livre e espontânea vontade, ajustam o presente termo em comutatividade e paridade, encerrando, após o cumprimento das obrigações aqui estabelecidas, qualquer relação jurídica ou fática preexistente, nada mais podendo ser exigido, a qualquer título.
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="font-bold mb-1 print:mb-0.5">Cláusula 5ª.</p>
+                    <p className="print:m-0">
+                      {agreementData.claimant_name 
+                        ? "As partes elegem o foro da Comarca de Cariacica/ES para dirimir quaisquer controvérsias oriundas deste instrumento."
+                        : "A Casa do Serralheiro LTDA elege o foro da Comarca de Cariacica/ES para dirimir quaisquer controvérsias oriundas deste instrumento."
+                      }
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Assinaturas */}
+              <div className="border-t-2 border-zinc-300 pt-6 mt-6 print:border-t print:pt-4 print:mt-4">
+                <p className="text-center mb-6 italic text-xs sm:text-sm print:mb-4 print:mt-2">
+                  E, por estarem justas e acordadas, assinam o presente instrumento em {agreementData.claimant_name ? "02 (duas)" : "01 (uma)"} via{agreementData.claimant_name ? "s" : ""} de igual teor e forma, na presença de testemunhas.
+                </p>
+
+                <p className="text-center font-bold mb-10 text-xs sm:text-sm print:mb-6 print:text-xs">
+                  Cariacica/ES, {agreementData.signature_date}
+                </p>
+
+                {/* Assinante 1 */}
+                <div className="mb-8 print:mb-6">
+                  <p className="text-center font-bold text-xs sm:text-sm print:text-xs">CASA DO SERRALHEIRO LTDA</p>
+                  <div style={{ height: '40px' }} className="print:h-10"></div>
+                  <p className="text-center text-xs sm:text-sm print:text-xs print:m-0">
+                    {agreementData.representative_name || "___________________________________"}
+                  </p>
+                  <p className="text-center text-xs sm:text-sm print:text-xs print:m-0">CPF: {agreementData.representative_cpf || "_______________"}</p>
+                </div>
+
+                {/* Assinante 2 - Apenas se preenchida */}
+                {agreementData.claimant_name && (
+                  <div className="mb-8 print:mb-6">
+                    <p className="text-center font-bold text-xs sm:text-sm print:text-xs">SEGUNDA ACORDANTE</p>
+                    <p className="text-center text-xs sm:text-sm print:text-xs">{agreementData.claimant_name}</p>
+                    <div style={{ height: '40px' }} className="print:h-10"></div>
+                    <p className="text-center text-xs sm:text-sm print:text-xs print:m-0">
+                      {agreementData.representative_name || "___________________________________"}
+                    </p>
+                    <p className="text-center text-xs sm:text-sm print:text-xs print:m-0">CPF: {agreementData.representative_cpf || "_______________"}</p>
+                  </div>
+                )}
+
+                {/* Testemunhas */}
+                <div className="grid grid-cols-2 gap-4 print:gap-3">
+                  <div>
+                    <p className="text-center font-bold text-xs sm:text-sm print:text-xs">TESTEMUNHA 1</p>
+                    <div style={{ height: '40px' }} className="print:h-10"></div>
+                    <p className="text-center text-xs sm:text-sm print:text-xs print:m-0">
+                      {agreementData.witness1_name || "___________________________________"}
+                    </p>
+                    <p className="text-center text-xs sm:text-sm print:text-xs print:m-0">CPF: {agreementData.witness1_cpf || "_______________"}</p>
+                  </div>
+                  <div>
+                    <p className="text-center font-bold text-xs sm:text-sm print:text-xs">TESTEMUNHA 2</p>
+                    <div style={{ height: '40px' }} className="print:h-10"></div>
+                    <p className="text-center text-xs sm:text-sm print:text-xs print:m-0">
+                      {agreementData.witness2_name || "___________________________________"}
+                    </p>
+                    <p className="text-center text-xs sm:text-sm print:text-xs print:m-0">CPF: {agreementData.witness2_cpf || "_______________"}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
