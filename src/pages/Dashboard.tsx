@@ -86,7 +86,8 @@ export default function Dashboard() {
       const updatedRequests = requests.map(r => r.id === id ? { ...r, status: newStatus } : r);
       setRequests(updatedRequests);
       
-      const res = await fetch(`/api/requests/${id}`, {
+      // ✅ CORREÇÃO: URL correta para o endpoint de status
+      const res = await fetch(`/api/requests/${id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
@@ -99,8 +100,7 @@ export default function Dashboard() {
       }
     } catch (error) {
       console.error("Erro ao atualizar status:", error);
-      // Se não conseguir fazer o fetch, reverte
-      
+      fetchRequests(); // Recarrega do banco em caso de erro
     }
   };
 
