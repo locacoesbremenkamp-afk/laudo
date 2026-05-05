@@ -316,7 +316,11 @@ export default function ReportEditor() {
         skipFonts: true,
         backgroundColor: '#ffffff',
         cacheBust: true,
+        quality: 0.95,
       });
+      
+      if (!imgData) throw new Error("Falha ao gerar imagem do relatório");
+      
       const pdf = new jsPDF('p', 'mm', 'a4');
       const imgProps = pdf.getImageProperties(imgData);
       const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -335,6 +339,7 @@ export default function ReportEditor() {
         pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
         heightLeft -= pageHeight;
       }
+      
       const pdfDataUri = pdf.output('datauristring');
 
       // 2. Upload to Server
@@ -346,13 +351,13 @@ export default function ReportEditor() {
         body: JSON.stringify({ file: pdfDataUri, fileName })
       });
 
-      if (!res.ok) throw new Error("Failed to upload");
+      if (!res.ok) throw new Error("Falha no upload do servidor");
       const { url } = await res.json();
 
-      alert(`Relatório salvo no servidor com sucesso!\nURL: ${url}`);
-    } catch (error) {
+      alert(`✅ Relatório salvo com sucesso!\nURL: ${url}`);
+    } catch (error: any) {
       console.error('Error saving to server:', error);
-      alert('Erro ao salvar no servidor.');
+      alert(`❌ Erro ao gerar laudo:\n\n${error?.message || 'Erro desconhecido'}\n\nTente novamente ou abra o Console (F12) para mais detalhes.`);
     } finally {
       setIsGeneratingPdf(false);
       setUploadingPdf(false);
@@ -372,7 +377,11 @@ export default function ReportEditor() {
         skipFonts: true,
         backgroundColor: '#ffffff',
         cacheBust: true,
+        quality: 0.95,
       });
+      
+      if (!imgData) throw new Error("Falha ao gerar imagem do relatório");
+      
       const pdf = new jsPDF('p', 'mm', 'a4');
       const imgProps = pdf.getImageProperties(imgData);
       const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -407,10 +416,10 @@ export default function ReportEditor() {
         .from('rzv-engenharia')
         .getPublicUrl(filePath);
 
-      alert(`Relatório salvo no Supabase com sucesso!\nURL: ${publicUrl}`);
-    } catch (error) {
+      alert(`✅ Relatório salvo no Supabase com sucesso!\nURL: ${publicUrl}`);
+    } catch (error: any) {
       console.error('Error saving to Supabase:', error);
-      alert('Erro ao salvar no Supabase. Verifique se o bucket "rzv-engenharia" existe e está público.');
+      alert(`❌ Erro ao gerar laudo:\n\n${error?.message || 'Erro desconhecido'}\n\nVerifique se:\n• O bucket "rzv-engenharia" existe\n• Supabase está configurado corretamente\n\nTente novamente ou abra o Console (F12).`);
     } finally {
       setIsGeneratingPdf(false);
       setUploadingPdf(false);
