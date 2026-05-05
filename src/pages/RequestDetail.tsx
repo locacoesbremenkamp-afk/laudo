@@ -41,14 +41,6 @@ interface Request {
   agreement?: any;
 }
 
-const STATUS_OPTIONS = [
-  "Pedido Recebido",
-  "Em Análise",
-  "Aceito",
-  "Agendado",
-  "Concluído",
-  "Cancelado"
-];
 
 export default function RequestDetail() {
   const { id } = useParams();
@@ -70,19 +62,6 @@ export default function RequestDetail() {
       console.error(error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const updateStatus = async (status: string) => {
-    try {
-      await fetch(`/api/requests/${id}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status })
-      });
-      setRequest(prev => prev ? { ...prev, status } : null);
-    } catch (error) {
-      console.error(error);
     }
   };
 
@@ -155,15 +134,6 @@ Engenheiro Civil - RZV Engenharia`;
           <span className="font-medium">Voltar</span>
         </button>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <select 
-            className="flex-1 sm:flex-none bg-white border border-zinc-200 rounded-lg px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500/20 outline-none"
-            value={request.status}
-            onChange={(e) => updateStatus(e.target.value)}
-          >
-            {STATUS_OPTIONS.map(opt => (
-              <option key={opt} value={opt}>{opt}</option>
-            ))}
-          </select>
           <button 
             onClick={() => window.print()}
             className="flex-1 sm:flex-none bg-white border border-zinc-200 text-zinc-600 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium hover:bg-zinc-50 transition-colors flex items-center justify-center gap-2 print:hidden"
