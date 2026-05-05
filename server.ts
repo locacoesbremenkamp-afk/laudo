@@ -28,7 +28,7 @@ async function startServer() {
 
   app.use(express.json({ limit: '50mb' }));
 
-  const uploadDir = path.join(__dirname, "uploads");
+  const uploadDir = path.join(process.cwd(), "uploads");
   if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
   }
@@ -39,10 +39,16 @@ async function startServer() {
     if (!file || !fileName) {
       return res.status(400).json({ error: "Missing file or fileName" });
     }
-    const base64Data = file.replace(/^data:([A-Za-z-+/]+);base64,/, "");
-    const filePath = path.join(uploadDir, fileName);
-    fs.writeFileSync(filePath, base64Data, 'base64');
-    res.json({ url: `/uploads/${fileName}` });
+    try {
+      const base64Data = file.replace(/^data:([A-Za-z-+/]+);base64,/, "");
+      const filePath = path.join(uploadDir, fileName);
+      fs.writeFileSync(filePath, base64Data, 'base64');
+      console.log(`✅ File uploaded: ${filePath}`);
+      res.json({ url: `/uploads/${fileName}` });
+    } catch (error) {
+      console.error("❌ Upload error:", error);
+      res.status(500).json({ error: "Erro ao fazer upload do arquivo" });
+    }
   });
 
   // API Routes
