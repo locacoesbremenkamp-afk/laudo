@@ -20,16 +20,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const {
       company_name, responsible_name, phone, role, address,
       lat, lng, claimant_name, claimant_phone, budget_number, description,
-      urgency, suggested_date, attachments
+      urgency, suggested_date, attachments, unit
     } = req.body;
 
-    const { data, error } = await supabase.from('requests').insert([{
+    const row: Record<string, any> = {
       company_name, responsible_name, phone, role, address,
       lat, lng, claimant_name, claimant_phone, budget_number, description,
-      urgency, suggested_date
-    }]).select().single();
+      urgency, suggested_date: suggested_date || null, unit: unit || null
+    };
+    let { data, error } = await supabase.from('requests').insert([row]).select().single();
 
-    if (error) return res.status(500).json({ error: error.message });
+    // Banco ainda sem a coluna "unit" (supabase/requests-unit.sql): guarda a unidade junto do nome.
+    if (error && /unit/.test(error.message)) {
+      const { unit: u, ...rest } = row;
+      ({ data, error } = await supabase.from('requests')
+        .insert([{ ...rest, company_name: u ? `${company_name} — ${u}` : company_name }])
+        .select().single());
+    }
+
+    if (error || !data) return res.status(500).json({ error: error?.message || 'Erro ao salvar.' });
     const requestId = data.id;
 
     if (attachments && Array.isArray(attachments) && attachments.length > 0) {

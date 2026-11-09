@@ -33,6 +33,7 @@ import { format, isWithinInterval, parseISO, startOfMonth, endOfMonth, subMonths
 import { ptBR } from "date-fns/locale";
 import { toPng } from 'html-to-image';
 import { jsPDF } from "jspdf";
+import { companyLabel } from "../lib/companies";
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444', '#71717a'];
 
@@ -255,7 +256,7 @@ export default function Analytics() {
                     #{req.id}
                   </div>
                   <div>
-                    <p className="font-bold text-zinc-900 text-xs sm:text-sm">{req.company_name}</p>
+                    <p className="font-bold text-zinc-900 text-xs sm:text-sm">{companyLabel(req)}</p>
                     <p className="text-[10px] sm:text-xs text-zinc-500 truncate max-w-[150px] sm:max-w-none">
                       {req.responsible_name} • {format(parseISO(req.created_at), "dd/MM/yy")}
                     </p>
@@ -341,7 +342,7 @@ export default function Analytics() {
                 {filteredRequestsByDate.map((req) => (
                   <tr key={req.id}>
                     <td className="py-3 font-bold text-zinc-900">#{req.id}</td>
-                    <td className="py-3 text-zinc-600">{req.company_name}</td>
+                    <td className="py-3 text-zinc-600">{companyLabel(req)}</td>
                     <td className="py-3 text-zinc-600">{format(parseISO(req.created_at), "dd/MM/yyyy")}</td>
                     <td className="py-3 text-right font-bold text-zinc-900">{req.status}</td>
                   </tr>

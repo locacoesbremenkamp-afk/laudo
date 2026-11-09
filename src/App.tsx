@@ -17,7 +17,25 @@ import LandingPage from "./pages/LandingPage";
 import Finance from "./pages/Finance";
 import DatabasePage from "./pages/Database";
 
+// Rodando no computador (npm run dev): o painel abre sem senha.
+// O site publicado na Vercel continua exigindo login.
+const LOCAL_ACCESS = import.meta.env.DEV;
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  if (LOCAL_ACCESS) {
+    return (
+      <>
+        <div className="bg-amber-100 text-amber-900 text-xs font-semibold px-4 py-1.5 text-center print:hidden">
+          Modo local: acesso liberado sem senha (só neste computador)
+        </div>
+        {children}
+      </>
+    );
+  }
+  return <AuthGate>{children}</AuthGate>;
+}
+
+function AuthGate({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState("");
@@ -164,7 +182,7 @@ function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (v: boolea
   ];
 
   // Don't show sidebar on public request form or landing page
-  if (location.pathname === "/request" || location.pathname === "/") return null;
+  if (location.pathname === "/request" || location.pathname === "/" || location.pathname === "/inicio") return null;
 
   const copyRequestLink = async () => {
     const url = `${window.location.origin}/request`;
@@ -329,7 +347,7 @@ export default function App() {
 
 function AppContent({ isSidebarOpen, setIsSidebarOpen }: { isSidebarOpen: boolean, setIsSidebarOpen: (v: boolean) => void }) {
   const location = useLocation();
-  const isPublicRoute = location.pathname === "/request" || location.pathname === "/";
+  const isPublicRoute = location.pathname === "/request" || location.pathname === "/" || location.pathname === "/inicio";
 
   return (
     <div className="flex min-h-screen bg-zinc-50 font-sans selection:bg-blue-100 selection:text-blue-900 print:block print:min-h-0 print:bg-white">
@@ -349,7 +367,8 @@ function AppContent({ isSidebarOpen, setIsSidebarOpen }: { isSidebarOpen: boolea
         )}
         
         <Routes>
-          <Route path="/" element={<LandingPage />} />
+          <Route path="/" element={<PublicRequestForm />} />
+          <Route path="/inicio" element={<LandingPage />} />
           <Route path="/demo-dashboard" element={<Dashboard />} />
           <Route path="/demo-agreement/:id" element={<AgreementTerm />} />
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

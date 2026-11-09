@@ -22,6 +22,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { formatDistanceToNow, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { companyLabel } from "../lib/companies";
 
 const STATUS_COLUMNS = [
   { id: "Pedido Recebido", color: "bg-blue-500", text: "text-blue-600", bg: "bg-blue-50" },
@@ -37,6 +38,7 @@ const STATUS_COLUMNS = [
 interface Request {
   id: number;
   company_name: string;
+  unit?: string | null;
   responsible_name: string;
   phone: string;
   address: string;
@@ -148,7 +150,7 @@ export default function Dashboard() {
         <body>
           ${selectedRequests.map(r => `
             <div class="card">
-              <h3>${r.company_name}</h3>
+              <h3>${companyLabel(r)}</h3>
               <p><strong>Responsável:</strong> ${r.responsible_name}</p>
               <p><strong>Telefone:</strong> ${r.phone}</p>
               <p><strong>Endereço:</strong> ${r.address}</p>
@@ -178,7 +180,7 @@ export default function Dashboard() {
   };
 
   const filteredRequests = requests.filter(r => 
-    r.company_name.toLowerCase().includes(search.toLowerCase()) ||
+    companyLabel(r).toLowerCase().includes(search.toLowerCase()) ||
     r.responsible_name.toLowerCase().includes(search.toLowerCase()) ||
     (r.budget_number && r.budget_number.includes(search))
   );
@@ -359,7 +361,7 @@ export default function Dashboard() {
                                 <div className="flex items-center gap-2 mb-1">
                                   <span className="inline-block w-2 h-2 bg-blue-500 rounded-full"></span>
                                   <h3 className="font-bold text-zinc-900 leading-tight group-hover:text-blue-600 transition-colors text-sm">
-                                    {request.company_name}
+                                    {companyLabel(request)}
                                   </h3>
                                 </div>
                               </div>

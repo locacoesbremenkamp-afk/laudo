@@ -20,6 +20,7 @@ import { SignaturePad, SignaturePadRef } from "../components/SignaturePad";
 import { toPng } from 'html-to-image';
 import { jsPDF } from "jspdf";
 import { uploadFile } from "../lib/storage";
+import { companyLabel } from "../lib/companies";
 
 // Mostrado quando a imagem de um anexo não existe mais no armazenamento.
 const MISSING_IMAGE =
@@ -31,6 +32,7 @@ const MISSING_IMAGE =
 interface Request {
   id: number;
   company_name: string;
+  unit?: string | null;
   responsible_name: string;
   description: string;
   budget_number: string;
@@ -131,7 +133,7 @@ export default function ReportEditor() {
         Preciso gerar um laudo técnico profissional e detalhado para o chamado #${request.id}.
         
         DADOS DO CLIENTE:
-        Empresa: ${request.company_name}
+        Empresa: ${companyLabel(request)}
         Endereço: ${request.address}
         
         PROBLEMA RELATADO PELO CLIENTE:
@@ -459,7 +461,7 @@ export default function ReportEditor() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-12 bg-zinc-50/50 p-10 rounded-[2.5rem] border border-zinc-100 shadow-sm">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Contratante / Cliente</label>
-                    <p className="text-2xl font-black text-zinc-900 tracking-tight">{request.company_name}</p>
+                    <p className="text-2xl font-black text-zinc-900 tracking-tight">{companyLabel(request)}</p>
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Local da Inspeção</label>
@@ -646,7 +648,7 @@ export default function ReportEditor() {
               <section className="grid grid-cols-2 gap-4 border border-black p-6 break-inside-avoid">
                 <div>
                   <p className="text-[10px] font-black text-zinc-600 uppercase tracking-widest border-b border-zinc-300 pb-1 mb-1">Contratante / Cliente</p>
-                  <p className="font-bold text-black text-base">{request.company_name}</p>
+                  <p className="font-bold text-black text-base">{companyLabel(request)}</p>
                 </div>
                 <div>
                   <p className="text-[10px] font-black text-zinc-600 uppercase tracking-widest border-b border-zinc-300 pb-1 mb-1">Local da Inspeção</p>

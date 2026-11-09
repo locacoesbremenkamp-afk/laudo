@@ -18,10 +18,12 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { companyLabel } from "../lib/companies";
 
 interface Request {
   id: number;
   company_name: string;
+  unit?: string | null;
   responsible_name: string;
   phone: string;
   role: string;
@@ -69,7 +71,7 @@ export default function RequestDetail() {
     if (!request) return "";
     return `Olá *${request.claimant_name}*, tudo bem?
     
-Sou da *RZV Engenharia* e estou entrando em contato referente à solicitação de *Visita Técnica* (Chamado #${request.id}) realizada para a unidade *${request.company_name}*.
+Sou da *RZV Engenharia* e estou entrando em contato referente à solicitação de *Visita Técnica* (Chamado #${request.id}) realizada para a unidade *${companyLabel(request)}*.
 
 Para que possamos agendar o melhor horário e garantir um atendimento eficiente, por gentileza, nos envie as seguintes informações:
 
@@ -172,7 +174,7 @@ Engenheiro Civil - RZV Engenharia`;
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                 <div className="space-y-1 p-3 bg-zinc-50 rounded-xl border border-zinc-100">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Empresa / Unidade</p>
-                  <p className="font-bold text-zinc-900 text-sm sm:text-base">{request.company_name}</p>
+                  <p className="font-bold text-zinc-900 text-sm sm:text-base">{companyLabel(request)}</p>
                 </div>
                 <div className="space-y-1 p-3 bg-zinc-50 rounded-xl border border-zinc-100">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Responsável (Solicitante)</p>

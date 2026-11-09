@@ -1,4 +1,5 @@
 import express from "express";
+import http from "http";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -24,6 +25,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function startServer() {
   const app = express();
+  const httpServer = http.createServer(app);
   const PORT = 3000;
 
   app.use(express.json({ limit: '50mb' }));
@@ -63,16 +65,25 @@ async function startServer() {
       const { 
         company_name, responsible_name, phone, role, address, 
         lat, lng, claimant_name, claimant_phone, budget_number, description, 
-        urgency, suggested_date, attachments 
+        urgency, suggested_date, attachments, unit
       } = req.body;
 
-      const { data, error } = await supabase.from('requests').insert([{
-        company_name, responsible_name, phone, role, address, 
-        lat, lng, claimant_name, claimant_phone, budget_number, description, 
-        urgency, suggested_date
-      }]).select().single();
+      const row: Record<string, any> = {
+        company_name, responsible_name, phone, role, address,
+        lat, lng, claimant_name, claimant_phone, budget_number, description,
+        urgency, suggested_date: suggested_date || null, unit: unit || null
+      };
+      let { data, error } = await supabase.from('requests').insert([row]).select().single();
 
-      if (error) throw error;
+      // Banco ainda sem a coluna "unit" (supabase/requests-unit.sql): guarda a unidade junto do nome.
+      if (error && /unit/.test(error.message)) {
+        const { unit: u, ...rest } = row;
+        ({ data, error } = await supabase.from('requests')
+          .insert([{ ...rest, company_name: u ? `${company_name} — ${u}` : company_name }])
+          .select().single());
+      }
+
+      if (error || !data) throw error || new Error("Erro ao salvar.");
       const requestId = data.id;
 
       if (attachments && Array.isArray(attachments) && attachments.length > 0) {
@@ -272,10 +283,10 @@ async function startServer() {
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { 
+      server: {
         middlewareMode: true,
-        // Atualização ao vivo ligada; o AI Studio pode desligar com DISABLE_HMR=true.
-        hmr: process.env.DISABLE_HMR !== "true",
+        // Atualização ao vivo pela mesma porta do servidor; o AI Studio pode desligar com DISABLE_HMR=true.
+        hmr: process.env.DISABLE_HMR === "true" ? false : { server: httpServer },
       },
       appType: "spa",
     });
@@ -287,7 +298,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }
