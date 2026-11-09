@@ -24,6 +24,12 @@ const URGENCY_COLOR: Record<string, string> = {
   Crítica: "#B71C1C",
 };
 
+/** Esconde números que parecem telefone (8+ dígitos, com ou sem DDD, espaços, traços). */
+export const maskPhones = (text?: string | null) =>
+  String(text ?? "").replace(/(\+?\(?\d[\d\s().-]{6,}\d)/g, (m) =>
+    m.replace(/\D/g, "").length >= 8 ? "[telefone oculto]" : m
+  );
+
 // Texto digitado pelos clientes: escapa para não quebrar a página impressa.
 const esc = (v: unknown) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -38,8 +44,15 @@ const fmtDate = (v?: string | null) => {
 const row = (label: string, value?: string) =>
   `<div class="row"><span>${label}</span><b>${value ? esc(value) : "—"}</b></div>`;
 
-function card(r: PrintableRequest) {
+type PrintOptions = {
+  /** Versão para enviar a terceiros: sem telefones e endereço. */
+  hideContacts?: boolean;
+  title?: string;
+};
+
+function card(r: PrintableRequest, opts: PrintOptions = {}) {
   const color = URGENCY_COLOR[r.urgency || ""] || "#444";
+  const hide = opts.hideContacts;
   return `
   <section class="card">
     <header>
@@ -52,18 +65,26 @@ function card(r: PrintableRequest) {
       ${row("Visita sugerida", fmtDate(r.suggested_date))}
       ${row("Situação", r.status)}
       ${row("Pré-venda", r.budget_number)}
-      ${row("Responsável", [r.responsible_name, r.phone].filter(Boolean).join(" · "))}
-      ${row("Reclamante", [r.claimant_name, r.claimant_phone].filter(Boolean).join(" · "))}
-      ${row("Endereço", r.address)}
+      ${row("Responsável", hide ? r.responsible_name : [r.responsible_name, r.phone].filter(Boolean).join(" · "))}
+      ${row("Reclamante", hide ? r.claimant_name : [r.claimant_name, r.claimant_phone].filter(Boolean).join(" · "))}
+      ${hide ? "" : row("Endereço", r.address)}
     </div>
-    <div class="desc"><span>Descrição do problema</span><p>${esc(r.description)}</p></div>
-    <div class="notes"><span>Anotações da visita</span></div>
+    <div class="desc"><span>Descrição do problema</span><p>${esc(hide ? maskPhones(r.description) : r.description)}</p></div>
+    ${hide ? "" : `<div class="notes"><span>Anotações da visita</span></div>`}
   </section>`;
 }
 
 /** Abre uma janela com os chamados formatados para A4 e chama a impressão. Retorna false se o pop-up foi bloqueado. */
-export function printRequests(list: PrintableRequest[]) {
+export function printRequests(list: PrintableRequest[], opts: PrintOptions = {}) {
   const sorted = [...list].sort((a, b) => a.id - b.id);
+  const title = opts.title || "RZV Engenharia — Chamados Técnicos";
+  // Resumo por situação no topo (útil para enviar para apreciação).
+  const byStatus = sorted.reduce<Record<string, number>>((acc, r) => {
+    const k = r.status || "Sem situação";
+    acc[k] = (acc[k] || 0) + 1;
+    return acc;
+  }, {});
+  const summary = Object.entries(byStatus).map(([k, n]) => `${esc(k)}: <b>${n}</b>`).join(" · ");
   const now = new Date();
   const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <title>Chamados RZV — ${now.toLocaleDateString("pt-BR")}</title>
@@ -83,9 +104,9 @@ export function printRequests(list: PrintableRequest[]) {
   .notes{margin-top:8px;height:54px;border-top:1px dashed #bbb;padding-top:4px}
   @page{size:A4;margin:12mm} @media print{body{margin:0}}
 </style></head><body>
-<div class="top"><div><h1>RZV Engenharia — Chamados Técnicos</h1><p>${sorted.length} chamado(s)</p></div>
+<div class="top"><div><h1>${esc(title)}</h1><p>${sorted.length} chamado(s) — ${summary}</p></div>
 <p>Impresso em ${now.toLocaleString("pt-BR")}</p></div>
-${sorted.map(card).join("")}
+${sorted.map((r) => card(r, opts)).join("")}
 <script>window.onload=function(){setTimeout(function(){window.print()},250)}</script>
 </body></html>`;
 

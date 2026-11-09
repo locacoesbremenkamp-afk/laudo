@@ -17,7 +17,8 @@ import {
   Edit,
   ChevronLeft,
   ChevronRight as ChevronRightIcon,
-  X
+  X,
+  Eye
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { formatDistanceToNow, format } from "date-fns";
@@ -25,7 +26,7 @@ import { ptBR } from "date-fns/locale";
 import { companyLabel } from "../lib/companies";
 import { printRequests } from "../lib/printRequests";
 
-const STATUS_COLUMNS = [
+export const STATUS_COLUMNS = [
   { id: "Pedido Recebido", color: "bg-blue-500", text: "text-blue-600", bg: "bg-blue-50" },
   { id: "Em Análise", color: "bg-yellow-500", text: "text-yellow-600", bg: "bg-yellow-50" },
   { id: "Aceito", color: "bg-orange-500", text: "text-orange-600", bg: "bg-orange-50" },
@@ -60,6 +61,7 @@ export default function Dashboard() {
   const [copied, setCopied] = useState(false);
   const [printMode, setPrintMode] = useState(false);
   const [selectedForPrint, setSelectedForPrint] = useState<Set<number>>(new Set());
+  const [viewLinkCopied, setViewLinkCopied] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editData, setEditData] = useState<Partial<Request>>({});
   const [scrollPosition, setScrollPosition] = useState(0);
@@ -207,7 +209,32 @@ export default function Dashboard() {
           <p className="text-zinc-500 text-sm">Gerencie e acompanhe todos os chamados técnicos e laudos</p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          <button 
+          {!printMode && (
+            <button
+              onClick={() => {
+                if (!printRequests(filteredRequests)) alert("O navegador bloqueou a janela de impressão. Permita pop-ups para este site e tente de novo.");
+              }}
+              disabled={filteredRequests.length === 0}
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-zinc-200 text-zinc-600 rounded-lg text-sm font-medium hover:bg-zinc-50 shadow-sm disabled:opacity-50"
+              title="Imprime todos os chamados exibidos (respeita a busca)"
+            >
+              <Printer size={16} />
+              Imprimir todos ({filteredRequests.length})
+            </button>
+          )}
+          <button
+            onClick={async () => {
+              const url = `${window.location.origin}/acompanhamento`;
+              try { await navigator.clipboard.writeText(url); setViewLinkCopied(true); setTimeout(() => setViewLinkCopied(false), 2500); }
+              catch { window.prompt("Copie o link de visualização:", url); }
+            }}
+            className="flex items-center gap-2 px-3 py-2 bg-white border border-zinc-200 text-zinc-600 rounded-lg text-sm font-medium hover:bg-zinc-50 shadow-sm"
+            title="Link só para visualizar os cards, sem editar"
+          >
+            {viewLinkCopied ? <Check size={16} className="text-emerald-500" /> : <Eye size={16} />}
+            {viewLinkCopied ? "Link copiado!" : "Link de visualização"}
+          </button>
+          <button
             onClick={() => setPrintMode(!printMode)}
             className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
               printMode 
@@ -216,7 +243,7 @@ export default function Dashboard() {
             }`}
           >
             <Printer size={16} />
-            {printMode ? 'Cancelar' : 'Impressão'}
+            {printMode ? 'Cancelar' : 'Escolher para imprimir'}
           </button>
           {printMode && (
             <button 
