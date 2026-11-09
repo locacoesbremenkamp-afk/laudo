@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion } from "motion/react";
-import { Wallet, Plus, Trash2, FileText, Download, Search, User, MapPin, Calendar, Receipt, Calculator, Printer } from "lucide-react";
+import { Wallet, Plus, Trash2, FileText, Download, Search, User, MapPin, Calendar, Receipt, Calculator, Printer, Save } from "lucide-react";
 import { cn } from "../lib/utils";
 import { supabase } from "../lib/supabase";
 import { toPng } from 'html-to-image';
@@ -8,6 +8,7 @@ import { jsPDF } from "jspdf";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { PullRequests, type FinanceRequest } from "../components/PullRequests";
+import { SavedFinanceReports, type SavedReport } from "../components/SavedFinanceReports";
 import { companyLabel } from "../lib/companies";
 
 // Dados da RZV impressos no relatório. Preencha o CNPJ para ele aparecer.
@@ -96,13 +97,38 @@ export default function Finance() {
 
   useEffect(() => {
     fetchRequests();
+    fetchSaved();
   }, []);
+
+  // ── Relatórios salvos ────────────────────────────────────────────
+  const [saved, setSaved] = useState<SavedReport[]>([]);
+  const [savedLoading, setSavedLoading] = useState(true);
+  const [savedError, setSavedError] = useState("");
+  const [saveMsg, setSaveMsg] = useState("");
+
+  const fetchSaved = async () => {
+    setSavedLoading(true);
+    try {
+      const res = await fetch("/api/financial-reports");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Não foi possível carregar os relatórios salvos.");
+      setSaved(Array.isArray(data) ? data : []);
+      setSavedError("");
+    } catch (e: any) {
+      const msg = String(e?.message || "");
+      setSavedError(/financial_reports/.test(msg)
+        ? "A lista de relatórios salvos ainda não foi criada no banco. Rode supabase/financeiro.sql no Supabase."
+        : msg || "Não foi possível carregar os relatórios salvos.");
+    } finally {
+      setSavedLoading(false);
+    }
+  };
 
   const fetchRequests = async () => {
     try {
       const res = await fetch("/api/requests");
       const data = await res.json();
-      setRequests(data || []);
+      setRequests(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching requests:', error);
     } finally {
@@ -110,7 +136,69 @@ export default function Finance() {
     }
   };
 
-  const [docNumber] = useState(reportNumber);
+  const [docNumber, setDocNumber] = useState(reportNumber);
+
+  const emptyFinance: FinanceData = { clientName: "", cnpj: "", requester: "", observation: "", serviceDescription: "", companyType: 'other' };
+
+  const startNew = () => {
+    setFinanceData(emptyFinance);
+    setItems([]);
+    setDocNumber(reportNumber());
+    setSaveMsg("");
+    setIsCreating(true);
+  };
+
+  const openSaved = (r: SavedReport) => {
+    setFinanceData({ ...emptyFinance, ...(r.data?.financeData || {}) });
+    setItems(Array.isArray(r.data?.items) ? r.data.items : []);
+    setDocNumber(r.doc_number);
+    setSaveMsg(`Relatório ${r.doc_number} aberto.`);
+    setIsCreating(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const deleteSaved = async (r: SavedReport) => {
+    const res = await fetch(`/api/financial-reports?id=${r.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data?.error || "Não foi possível excluir o relatório.");
+      return;
+    }
+    setSaved(prev => prev.filter(x => x.id !== r.id));
+  };
+
+  /** Salva (ou atualiza, pelo número) o relatório aberto. Retorna true se deu certo. */
+  const saveReport = async () => {
+    setGenerating(true);
+    setSaveMsg("");
+    try {
+      const total = items.reduce((acc, item) => acc + item.totalValue, 0);
+      const res = await fetch("/api/financial-reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          doc_number: docNumber,
+          client_name: financeData.clientName,
+          total,
+          items_count: items.length,
+          data: { financeData, items },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Não foi possível salvar o relatório.");
+      setSaved(prev => [data, ...prev.filter(x => x.doc_number !== data.doc_number)]);
+      setSaveMsg(`Relatório ${docNumber} salvo.`);
+      return true;
+    } catch (e: any) {
+      const msg = String(e?.message || "erro desconhecido");
+      setSaveMsg(/financial_reports/.test(msg)
+        ? "Não salvou: rode supabase/financeiro.sql no Supabase para criar a lista de relatórios."
+        : `Não salvou: ${msg}`);
+      return false;
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const handleCompanyTypeChange = (type: 'serralheiro' | 'other') => {
     setFinanceData(prev => ({
@@ -194,7 +282,9 @@ export default function Finance() {
 
   const totalAmount = items.reduce((acc, item) => acc + item.totalValue, 0);
 
-  const handleGeneratePDF = () => {
+  // Ao gerar o PDF, o relatório fica salvo na lista (mesmo se a impressão for cancelada).
+  const handleGeneratePDF = async () => {
+    await saveReport();
     window.print();
   };
 
@@ -211,14 +301,35 @@ export default function Finance() {
           </p>
         </div>
         {isCreating && (
-          <button
-            onClick={handleGeneratePDF}
-            disabled={generating || items.length === 0}
-            className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 disabled:opacity-50 font-bold text-sm print:hidden"
-          >
-            <Printer size={20} />
-            Imprimir / PDF
-          </button>
+          <div className="flex flex-col items-stretch sm:items-end gap-1.5">
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setIsCreating(false)}
+                className="flex items-center justify-center gap-2 px-4 py-3 bg-white border border-zinc-200 text-zinc-600 rounded-xl hover:bg-zinc-50 font-semibold text-sm"
+              >
+                Relatórios salvos
+              </button>
+              <button
+                onClick={saveReport}
+                disabled={generating || items.length === 0}
+                className="flex items-center justify-center gap-2 px-4 py-3 bg-white border border-blue-200 text-blue-700 rounded-xl hover:bg-blue-50 disabled:opacity-50 font-bold text-sm"
+              >
+                <Save size={18} />
+                Salvar
+              </button>
+              <button
+                onClick={handleGeneratePDF}
+                disabled={generating || items.length === 0}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 disabled:opacity-50 font-bold text-sm"
+              >
+                <Printer size={20} />
+                Imprimir / PDF
+              </button>
+            </div>
+            <p className="text-xs text-zinc-500">
+              Nº <span className="font-mono">{docNumber}</span>{saveMsg && <> · <span className={saveMsg.startsWith("Não") ? "text-red-600" : "text-emerald-700"}>{saveMsg}</span></>}
+            </p>
+          </div>
         )}
       </div>
 
@@ -226,7 +337,7 @@ export default function Finance() {
         {/* Selection Panel */}
         <div className="lg:col-span-1 space-y-6">
           <button
-            onClick={() => setIsCreating(true)}
+            onClick={startNew}
             className={`w-full p-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-4 ${
               isCreating 
                 ? "bg-blue-50 border-blue-200 ring-4 ring-blue-500/10" 
@@ -398,15 +509,13 @@ export default function Finance() {
         {/* Editor Panel */}
         <div className="lg:col-span-2 space-y-6">
           {!isCreating ? (
-            <div className="h-full min-h-[300px] sm:min-h-[400px] flex flex-col items-center justify-center bg-white rounded-2xl border-2 border-dashed border-zinc-200 p-8 sm:p-12 text-center">
-              <div className="w-12 h-12 sm:w-16 sm:h-16 bg-zinc-100 rounded-2xl flex items-center justify-center mb-4 text-zinc-400">
-                <Receipt size={32} />
-              </div>
-              <h3 className="text-lg sm:text-xl font-bold text-zinc-900">Área Financeira</h3>
-              <p className="text-zinc-500 mt-2 max-w-xs mx-auto text-xs sm:text-sm">
-                Clique em "Gerar relatório financeiro" para começar a criar um novo documento.
-              </p>
-            </div>
+            <SavedFinanceReports
+              reports={saved}
+              loading={savedLoading}
+              error={savedError}
+              onOpen={openSaved}
+              onDelete={deleteSaved}
+            />
           ) : (
             <div className="space-y-6">
               {/* Items List */}

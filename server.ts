@@ -64,6 +64,29 @@ async function startServer() {
   });
 
   // API Routes
+  // Relatórios financeiros salvos (no site, api/financial-reports.ts faz o mesmo com login).
+  app.get("/api/financial-reports", async (_req, res) => {
+    const { data, error } = await supabase.from("financial_reports")
+      .select("id, doc_number, client_name, total, items_count, data, created_at, updated_at")
+      .order("created_at", { ascending: false }).limit(200);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  });
+  app.post("/api/financial-reports", async (req, res) => {
+    const { doc_number, client_name, total, items_count, data } = req.body || {};
+    if (!doc_number || !data) return res.status(400).json({ error: "Relatório sem número ou sem dados." });
+    const { data: saved, error } = await supabase.from("financial_reports")
+      .upsert({ doc_number, client_name, total: Number(total) || 0, items_count: Number(items_count) || 0, data, updated_at: new Date().toISOString() }, { onConflict: "doc_number" })
+      .select("id, doc_number, client_name, total, items_count, data, created_at, updated_at").single();
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(saved);
+  });
+  app.delete("/api/financial-reports", async (req, res) => {
+    const { error } = await supabase.from("financial_reports").delete().eq("id", Number(req.query.id));
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+  });
+
   app.get("/api/public-board", async (_req, res) => {
     const { data, error } = await supabase.from("requests").select("*").order("created_at", { ascending: false });
     if (error) return res.status(500).json({ error: error.message });
