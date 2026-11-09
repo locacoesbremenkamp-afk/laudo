@@ -94,7 +94,7 @@ export default function Finance() {
     }
   };
 
-  const handleCompanyTypeChange = (type: 'serralheiro' | 'serralheiro' | 'other') => {
+  const handleCompanyTypeChange = (type: 'serralheiro' | 'serralheira' | 'other') => {
     let clientName = "";
     let cnpj = "";
     

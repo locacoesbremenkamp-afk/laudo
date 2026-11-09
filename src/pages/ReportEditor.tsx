@@ -19,7 +19,14 @@ import { ptBR } from "date-fns/locale";
 import { SignaturePad, SignaturePadRef } from "../components/SignaturePad";
 import { toPng } from 'html-to-image';
 import { jsPDF } from "jspdf";
-import { supabase } from "../lib/supabase";
+import { uploadFile } from "../lib/storage";
+
+// Mostrado quando a imagem de um anexo não existe mais no armazenamento.
+const MISSING_IMAGE =
+  "data:image/svg+xml;charset=utf-8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450"><rect width="100%" height="100%" fill="#f4f4f5"/><text x="50%" y="50%" fill="#71717a" font-family="sans-serif" font-size="26" text-anchor="middle">Imagem indisponível</text></svg>'
+  );
 
 interface Request {
   id: number;
@@ -43,6 +50,7 @@ export default function ReportEditor() {
   const [aiLoading, setAiLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadingPdf, setUploadingPdf] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [signatureImage, setSignatureImage] = useState("");
   const [canvasWidth, setCanvasWidth] = useState(500);
@@ -219,33 +227,26 @@ export default function ReportEditor() {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     
-    for (const file of Array.from(files)) {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const dataUrl = event.target?.result as string;
-        try {
-          const res = await fetch("/api/upload", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ file: dataUrl, fileName: `custom-${id}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.]/g, '')}` })
-          });
-          if (res.ok) {
-            const { url } = await res.json();
-            setReportData(prev => ({
-              ...prev,
-              custom_photos: [...(prev.custom_photos || []), { url, description: "" }]
-            }));
-          } else {
-            alert("Erro ao enviar a imagem para o servidor.");
-          }
-        } catch (err) {
-          console.error(err);
-          alert("Erro catastrófico ao enviar imagem.");
-        }
-      };
-      reader.readAsDataURL(file);
-    }
+    const list = Array.from(files);
     e.target.value = "";
+    setPhotoUploading(true);
+    const failed: string[] = [];
+    for (const file of list) {
+      try {
+        const { url } = await uploadFile(file, `reports/${id}/fotos`);
+        setReportData(prev => ({
+          ...prev,
+          custom_photos: [...(prev.custom_photos || []), { url, description: "" }]
+        }));
+      } catch (err: any) {
+        console.error(err);
+        failed.push(`• ${file.name}: ${err?.message || "erro desconhecido"}`);
+      }
+    }
+    setPhotoUploading(false);
+    if (failed.length) {
+      alert(`Não foi possível enviar ${failed.length} foto(s):\n\n${failed.join("\n")}`);
+    }
   };
 
   const removeCustomPhoto = (index: number) => {
@@ -303,67 +304,6 @@ export default function ReportEditor() {
     }, 100);
   };
 
-  const handleSaveToServer = async () => {
-    if (!reportRef.current) return;
-    setUploadingPdf(true);
-    syncSignature();
-    setIsGeneratingPdf(true);
-    await new Promise(r => setTimeout(r, 100)); // wait for DOM
-    try {
-      // 1. Generate PDF
-      const imgData = await toPng(reportRef.current, {
-        pixelRatio: 2,
-        skipFonts: true,
-        backgroundColor: '#ffffff',
-        cacheBust: true,
-        quality: 0.95,
-      });
-      
-      if (!imgData) throw new Error("Falha ao gerar imagem do relatório");
-      
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const imgProps = pdf.getImageProperties(imgData);
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      
-      let heightLeft = pdfHeight;
-      let position = 0;
-
-      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
-      heightLeft -= pageHeight;
-
-      while (heightLeft > 0) {
-        position = heightLeft - pdfHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
-        heightLeft -= pageHeight;
-      }
-      
-      const pdfDataUri = pdf.output('datauristring');
-
-      // 2. Upload to Server
-      const fileName = `report-${id}-${Date.now()}.pdf`;
-
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file: pdfDataUri, fileName })
-      });
-
-      if (!res.ok) throw new Error("Falha no upload do servidor");
-      const { url } = await res.json();
-
-      alert(`✅ Relatório salvo com sucesso!\nURL: ${url}`);
-    } catch (error: any) {
-      console.error('Error saving to server:', error);
-      alert(`❌ Erro ao gerar laudo:\n\n${error?.message || 'Erro desconhecido'}\n\nTente novamente ou abra o Console (F12) para mais detalhes.`);
-    } finally {
-      setIsGeneratingPdf(false);
-      setUploadingPdf(false);
-    }
-  };
-
   const handleSaveToSupabase = async () => {
     if (!reportRef.current) return;
     setUploadingPdf(true);
@@ -403,23 +343,16 @@ export default function ReportEditor() {
       const pdfBlob = pdf.output('blob');
 
       // 2. Upload to Supabase
-      const fileName = `report-${id}-${Date.now()}.pdf`;
-      const filePath = `reports/${fileName}`;
+      const { url: publicUrl } = await uploadFile(
+        new Blob([pdfBlob], { type: 'application/pdf' }),
+        `reports/${id}`,
+        `laudo-${id}.pdf`
+      );
 
-      const { error: uploadError } = await supabase.storage
-        .from('rzv-engenharia')
-        .upload(filePath, pdfBlob);
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('rzv-engenharia')
-        .getPublicUrl(filePath);
-
-      alert(`✅ Relatório salvo no Supabase com sucesso!\nURL: ${publicUrl}`);
+      alert(`✅ Laudo salvo com sucesso!\nURL: ${publicUrl}`);
     } catch (error: any) {
       console.error('Error saving to Supabase:', error);
-      alert(`❌ Erro ao gerar laudo:\n\n${error?.message || 'Erro desconhecido'}\n\nVerifique se:\n• O bucket "rzv-engenharia" existe\n• Supabase está configurado corretamente\n\nTente novamente ou abra o Console (F12).`);
+      alert(`❌ Erro ao salvar o laudo:\n\n${error?.message || 'Erro desconhecido'}\n\nTente novamente.`);
     } finally {
       setIsGeneratingPdf(false);
       setUploadingPdf(false);
@@ -598,8 +531,8 @@ export default function ReportEditor() {
                     <h3 className="font-black uppercase tracking-wider text-sm">Registro Fotográfico</h3>
                   </div>
                   <label className="bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm font-bold cursor-pointer hover:bg-zinc-800 transition-colors shadow-lg">
-                    Adicionar FOTOS
-                    <input type="file" accept="image/*" multiple onChange={handleAddCustomPhoto} className="hidden" />
+                    {photoUploading ? "Enviando fotos..." : "Adicionar FOTOS"}
+                    <input type="file" accept="image/*" multiple disabled={photoUploading} onChange={handleAddCustomPhoto} className="hidden" />
                   </label>
                 </div>
 
@@ -614,9 +547,11 @@ export default function ReportEditor() {
                             referrerPolicy="no-referrer"
                             crossOrigin="anonymous"
                             loading="lazy"
+                            alt="Anexo do chamado"
                             onError={(e) => {
                               const target = e.target as HTMLImageElement;
-                              target.src = "https://picsum.photos/seed/error/800/600";
+                              target.onerror = null;
+                              target.src = MISSING_IMAGE;
                             }}
                           />
                         </div>

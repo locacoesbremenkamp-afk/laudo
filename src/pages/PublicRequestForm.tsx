@@ -2,12 +2,14 @@ import { useState } from "react";
 import { Send, MapPin, Camera, CheckCircle2, Loader2, X as XIcon } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { cn } from "../lib/utils";
+import { uploadFile } from "../lib/storage";
 
 export default function PublicRequestForm() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [formData, setFormData] = useState({
     company_name: "",
@@ -50,38 +52,21 @@ export default function PublicRequestForm() {
 
   const uploadFiles = async () => {
     const uploadedAttachments: { url: string; type: string }[] = [];
-    
-    for (const file of files) {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
-      
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      setUploadProgress(`Enviando arquivo ${i + 1} de ${files.length}...`);
       try {
-        const base64Data = await base64Promise;
-        const res = await fetch("/api/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ file: base64Data, fileName })
-        });
-        
-        if (res.ok) {
-          const data = await res.json();
-          uploadedAttachments.push({
-            url: data.url,
-            type: file.type.startsWith('video') ? 'video' : 'image'
-          });
-        }
-      } catch (error) {
+        const uploaded = await uploadFile(file, "uploads");
+        uploadedAttachments.push({ url: uploaded.url, type: uploaded.type });
+      } catch (error: any) {
         console.error('Error uploading file:', error);
+        // Interrompe para não salvar a solicitação sem as fotos.
+        throw new Error(`Não foi possível enviar "${file.name}".\n${error?.message || ''}`);
       }
     }
 
+    setUploadProgress("");
     return uploadedAttachments;
   };
 
@@ -111,6 +96,7 @@ export default function PublicRequestForm() {
       console.error(error);
       alert(error.message || "Ocorreu um erro inesperado ao enviar sua solicitação. Por favor, tente novamente.");
     } finally {
+      setUploadProgress("");
       setLoading(false);
     }
   };
@@ -445,9 +431,10 @@ export default function PublicRequestForm() {
                             <button 
                               type="button"
                               onClick={() => removeFile(i)}
-                              className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                              aria-label="Remover arquivo"
+                              className="absolute top-1 right-1 bg-red-500 text-white p-1.5 rounded-full shadow sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                             >
-                              <XIcon size={10} />
+                              <XIcon size={12} />
                             </button>
                           </div>
                         ))}
@@ -468,7 +455,7 @@ export default function PublicRequestForm() {
                       className="flex-[2] py-3 sm:py-4 bg-blue-700 text-white rounded-xl sm:rounded-2xl font-semibold hover:bg-blue-800 transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-sm sm:text-base"
                     >
                       {loading ? <Loader2 className="animate-spin" /> : <Send size={18} />}
-                      Enviar Solicitação
+                      {uploadProgress || (loading ? "Enviando..." : "Enviar Solicitação")}
                     </button>
                   </div>
                 </motion.div>
