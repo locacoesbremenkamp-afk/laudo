@@ -274,7 +274,8 @@ async function startServer() {
     const vite = await createViteServer({
       server: { 
         middlewareMode: true,
-        hmr: false,
+        // Atualização ao vivo ligada; o AI Studio pode desligar com DISABLE_HMR=true.
+        hmr: process.env.DISABLE_HMR !== "true",
       },
       appType: "spa",
     });
