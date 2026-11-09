@@ -41,8 +41,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       urgency, suggested_date, attachments, unit
     } = req.body || {};
 
-    if (!String(company_name || '').trim() || !String(description || '').trim()) {
-      return res.status(400).json({ error: 'Preencha a empresa e a descrição do problema.' });
+    if (!String(company_name || '').trim() || !String(description || '').trim() || !String(address || '').trim()) {
+      return res.status(400).json({ error: 'Preencha a empresa, o endereço da visita e a descrição do problema.' });
     }
 
     const row: Record<string, any> = {

@@ -98,6 +98,8 @@ export default function PublicRequestForm() {
     if (s === 2) {
       if (!formData.claimant_name.trim()) return "Informe o nome do reclamante.";
       if (!formData.claimant_phone.trim()) return "Informe o telefone do reclamante.";
+      // O banco exige endereço (coluna NOT NULL).
+      if (!formData.address.trim()) return "Informe o endereço da visita.";
       if (!formData.description.trim()) return "Descreva o problema.";
     }
     return "";
@@ -260,7 +262,7 @@ export default function PublicRequestForm() {
                     <Field label="Data sugerida da visita">
                       <input type="date" className={inputCls} value={formData.suggested_date} onChange={(e) => set({ suggested_date: e.target.value })} />
                     </Field>
-                    <Field label="Endereço da visita (opcional)">
+                    <Field label="Endereço da visita">
                       <div className="relative">
                         <input type="text" className={cn(inputCls, "pl-10")} placeholder="Rua, número, bairro, cidade" value={formData.address} onChange={(e) => set({ address: e.target.value })} />
                         <MapPin className="absolute left-3 top-3.5 text-zinc-400" size={18} />
