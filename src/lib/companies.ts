@@ -1,11 +1,10 @@
 // Empresas e unidades que aparecem no formulário de solicitação.
 // Para incluir ou renomear uma unidade, altere só esta lista.
 export const COMPANIES = [
-  { name: "Casa do Serralheiro", short: "C. Serralheiro", color: "blue" },
-  { name: "Casa da Serralheira", short: "C. Serralheira", color: "pink" },
+  { name: "Casa do Serralheiro", short: "Casa do Serralheiro", color: "blue" },
 ] as const;
 
-export const UNITS = ["Viana", "Serra", "Linhares", "Cariacica"] as const;
+export const UNITS = ["Serra", "Linhares", "Cariacica"] as const;
 
 export function isKnownCompany(name: string) {
   return COMPANIES.some((c) => c.name === name);

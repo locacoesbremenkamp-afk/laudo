@@ -23,6 +23,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { formatDistanceToNow, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { companyLabel } from "../lib/companies";
+import { printRequests } from "../lib/printRequests";
 
 const STATUS_COLUMNS = [
   { id: "Pedido Recebido", color: "bg-blue-500", text: "text-blue-600", bg: "bg-blue-50" },
@@ -128,42 +129,10 @@ export default function Dashboard() {
       alert("Selecione pelo menos um card para imprimir!");
       return;
     }
-
-    const printContent = `
-      <html>
-        <head>
-          <title>Cards de Visitas</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            .card { 
-              border: 1px solid #ccc; 
-              padding: 20px; 
-              margin: 20px 0; 
-              page-break-inside: avoid;
-              break-inside: avoid;
-            }
-            .card h3 { margin: 0 0 10px 0; }
-            .card p { margin: 5px 0; font-size: 14px; }
-            @media print { body { margin: 0; } }
-          </style>
-        </head>
-        <body>
-          ${selectedRequests.map(r => `
-            <div class="card">
-              <h3>${companyLabel(r)}</h3>
-              <p><strong>Responsável:</strong> ${r.responsible_name}</p>
-              <p><strong>Telefone:</strong> ${r.phone}</p>
-              <p><strong>Endereço:</strong> ${r.address}</p>
-              <p><strong>Status:</strong> ${r.status}</p>
-              <p><strong>Descrição:</strong> ${r.description}</p>
-            </div>
-          `).join('')}
-        </body>
-      </html>
-    `;
-    const newWindow = window.open();
-    newWindow?.document.write(printContent);
-    newWindow?.print();
+    if (!printRequests(selectedRequests)) {
+      alert("O navegador bloqueou a janela de impressão. Permita pop-ups para este site e tente de novo.");
+      return;
+    }
     setPrintMode(false);
     setSelectedForPrint(new Set());
   };
@@ -256,6 +225,20 @@ export default function Dashboard() {
             >
               <Check size={16} />
               Imprimir ({selectedForPrint.size})
+            </button>
+          )}
+          {printMode && (
+            <button
+              onClick={() => setSelectedForPrint(
+                filteredRequests.length > 0 && filteredRequests.every(r => selectedForPrint.has(r.id))
+                  ? new Set()
+                  : new Set(filteredRequests.map(r => r.id))
+              )}
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-zinc-200 text-zinc-600 rounded-lg text-sm font-medium hover:bg-zinc-50 transition-all shadow-sm"
+            >
+              {filteredRequests.length > 0 && filteredRequests.every(r => selectedForPrint.has(r.id))
+                ? "Limpar seleção"
+                : `Selecionar todos (${filteredRequests.length})`}
             </button>
           )}
           <button 

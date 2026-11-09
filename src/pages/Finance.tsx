@@ -7,6 +7,19 @@ import { toPng } from 'html-to-image';
 import { jsPDF } from "jspdf";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { PullRequests, type FinanceRequest } from "../components/PullRequests";
+import { companyLabel } from "../lib/companies";
+
+// Dados da RZV impressos no relatório. Preencha o CNPJ para ele aparecer.
+const RZV = {
+  name: "RZV Engenharia",
+  cnpj: "",
+  crea: "CREA-ES 044985/D",
+  engineer: "Eng. Renzo Vetorazzi B. Gozze",
+  email: "rzvengenharia@gmail.com",
+};
+
+const reportNumber = () => `FIN-${format(new Date(), "yyyyMMdd-HHmm")}`;
 
 interface Request {
   id: string;
@@ -17,6 +30,9 @@ interface Request {
   description: string;
   budget_number?: string;
   claimant_name?: string;
+  unit?: string | null;
+  status?: string;
+  created_at?: string;
 }
 
 interface OrderItem {
@@ -36,7 +52,7 @@ interface FinanceData {
   observation: string;
   serviceDescription: string;
   requestId?: string;
-  companyType?: 'serralheiro' | 'serralheira' | 'other';
+  companyType?: 'serralheiro' | 'other';
 }
 
 interface PreSale {
@@ -94,89 +110,36 @@ export default function Finance() {
     }
   };
 
-  const handleCompanyTypeChange = (type: 'serralheiro' | 'serralheira' | 'other') => {
-    let clientName = "";
-    let cnpj = "";
-    
-    if (type === 'serralheiro') {
-      clientName = "Casa do Serralheiro";
-      cnpj = "12.982.965/0003-78"; // Placeholder
-    } else if (type === 'serralheira') {
-      clientName = "Casa da Serralheiro";
-      cnpj = "12.982.965/0003-78"; // Placeholder
-    }
+  const [docNumber] = useState(reportNumber);
 
+  const handleCompanyTypeChange = (type: 'serralheiro' | 'other') => {
     setFinanceData(prev => ({
       ...prev,
       companyType: type,
-      clientName: clientName || prev.clientName,
-      cnpj: cnpj || prev.cnpj
+      clientName: type === 'serralheiro' ? "Casa do Serralheiro" : (prev.companyType === 'serralheiro' ? "" : prev.clientName),
+      // CNPJ da Casa do Serralheiro: confira antes de emitir.
+      cnpj: type === 'serralheiro' ? "12.982.965/0003-78" : (prev.companyType === 'serralheiro' ? "" : prev.cnpj),
     }));
   };
 
-  const handleSelectReport = async (requestId: string) => {
-    if (!requestId) {
-      setSelectedRequest(null);
-      setFinanceData(prev => ({
-        ...prev,
-        requestId: undefined,
-        clientName: "",
-        requester: ""
-      }));
-      setItems([]);
-      return;
-    }
-
-    const req = requests.find(r => r.id.toString() === requestId);
-    if (!req) return;
-
-    setSelectedRequest(req);
-    setFinanceData(prev => ({
-      ...prev,
-      clientName: req.company_name,
-      requester: req.responsible_name,
-      requestId: req.id.toString()
+  const addRequestsAsItems = (rows: FinanceRequest[], unitValue: number) => {
+    const newItems: OrderItem[] = rows.map(r => ({
+      id: `req-${r.id}`,
+      description: [
+        `Visita técnica — Chamado #${r.id}`,
+        companyLabel(r),
+        [r.claimant_name && `Reclamante: ${r.claimant_name}`, r.budget_number && `Pré-venda: ${r.budget_number}`].filter(Boolean).join(" · "),
+      ].filter(Boolean).join("\n"),
+      quantity: 1,
+      unitValue,
+      totalValue: unitValue,
+      type: 'visit',
+      requestId: String(r.id),
     }));
-
-    // Fetch related data (visits, pre-sales) to populate items automatically
-    try {
-      const [visitsRes, preSalesRes] = await Promise.all([
-        fetch(`/api/requests/${requestId}/visits`),
-        fetch(`/api/requests/${requestId}/pre-sales`)
-      ]);
-
-      const visits: TechnicalVisit[] = await visitsRes.json();
-      const preSales: PreSale[] = await preSalesRes.json();
-
-      const newItems: OrderItem[] = [];
-
-      visits.forEach(v => {
-        newItems.push({
-          id: `visit-${v.id}`,
-          description: `Visita Técnica - ${v.technician_name || 'Técnico'} (${format(new Date(v.visit_date), 'dd/MM/yyyy')})`,
-          quantity: 1,
-          unitValue: v.value || 150,
-          totalValue: v.value || 150,
-          type: 'visit',
-          requestId: requestId
-        });
-      });
-
-      preSales.forEach(ps => {
-        newItems.push({
-          id: `presale-${ps.id}`,
-          description: `${ps.service_type} (${ps.area_m2}m²)`,
-          quantity: ps.area_m2,
-          unitValue: ps.unit_value || 20,
-          totalValue: ps.total_value,
-          type: ps.service_type.toLowerCase().includes('pintura') ? 'painting' : 'custom',
-          requestId: requestId
-        });
-      });
-
-      setItems(newItems);
-    } catch (error) {
-      console.error('Error fetching related data:', error);
+    setItems(prev => [...prev, ...newItems]);
+    if (!financeData.clientName && rows[0]) {
+      const name = rows[0].company_name.split(" — ")[0];
+      setFinanceData(prev => ({ ...prev, clientName: name, companyType: name === "Casa do Serralheiro" ? 'serralheiro' : 'other' }));
     }
   };
 
@@ -293,7 +256,7 @@ export default function Finance() {
 
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Empresa</label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <button
                       onClick={() => handleCompanyTypeChange('serralheiro')}
                       className={cn(
@@ -303,18 +266,7 @@ export default function Finance() {
                           : "bg-zinc-50 border-zinc-200 text-zinc-500 hover:bg-zinc-100"
                       )}
                     >
-                      C. Serralheiro
-                    </button>
-                    <button
-                      onClick={() => handleCompanyTypeChange('serralheira')}
-                      className={cn(
-                        "py-2 px-3 rounded-xl text-[10px] font-bold uppercase tracking-wider border transition-all",
-                        financeData.companyType === 'serralheira' 
-                          ? "bg-pink-600 border-pink-600 text-white shadow-lg shadow-pink-200" 
-                          : "bg-zinc-50 border-zinc-200 text-zinc-500 hover:bg-zinc-100"
-                      )}
-                    >
-                      C. Serralheira
+                      Casa do Serralheiro
                     </button>
                     <button
                       onClick={() => handleCompanyTypeChange('other')}
@@ -351,20 +303,6 @@ export default function Finance() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Vincular a um laudo? (Opcional)</label>
-                  <select
-                    value={financeData.requestId || ""}
-                    onChange={(e) => handleSelectReport(e.target.value)}
-                    className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl outline-none focus:border-blue-500 transition-all text-sm"
-                  >
-                    <option value="">Sem laudo vinculado</option>
-                    {requests.map(req => (
-                      <option key={req.id} value={req.id}>#{req.id} - {req.company_name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
                   <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Solicitante</label>
                   <input
                     type="text"
@@ -398,7 +336,20 @@ export default function Finance() {
               <div className="pt-4 border-t border-zinc-100 space-y-4">
                 <h3 className="font-bold text-zinc-900 flex items-center gap-2 text-sm sm:text-base">
                   <Plus size={18} className="text-blue-500" />
-                  Adicionar Itens
+                  Puxar chamados
+                </h3>
+                <p className="text-xs text-zinc-500 -mt-2">Filtre os chamados atendidos e adicione cada visita como item do relatório.</p>
+                <PullRequests
+                  requests={requests}
+                  alreadyAdded={new Set(items.map(i => i.requestId).filter(Boolean) as string[])}
+                  onAdd={addRequestsAsItems}
+                />
+              </div>
+
+              <div className="pt-4 border-t border-zinc-100 space-y-4">
+                <h3 className="font-bold text-zinc-900 flex items-center gap-2 text-sm sm:text-base">
+                  <Plus size={18} className="text-blue-500" />
+                  Adicionar item avulso
                 </h3>
                 
                 <button
@@ -514,7 +465,7 @@ export default function Finance() {
                                 <option value="">Sem laudo</option>
                                 {requests.map(req => (
                                   <option key={req.id} value={req.id}>
-                                    #{req.id} - {req.budget_number ? `Laudo: ${req.budget_number}` : 'Sem laudo'} {req.claimant_name ? `- ${req.claimant_name}` : ''}
+                                    #{req.id} - {companyLabel(req)}{req.claimant_name ? ` - ${req.claimant_name}` : ''}
                                   </option>
                                 ))}
                               </select>
@@ -599,9 +550,9 @@ export default function Finance() {
                         </div>
                         {item.requestId && (
                           <div className="text-[10px] text-blue-500 font-bold uppercase tracking-wider space-y-0.5">
-                            <p>Ref: Laudo #{item.requestId}</p>
+                            <p>Chamado #{item.requestId}</p>
                             {requests.find(r => String(r.id) === item.requestId)?.budget_number && (
-                              <p>Nº Laudo: {requests.find(r => String(r.id) === item.requestId)?.budget_number}</p>
+                              <p>Pré-venda: {requests.find(r => String(r.id) === item.requestId)?.budget_number}</p>
                             )}
                             {requests.find(r => String(r.id) === item.requestId)?.claimant_name && (
                               <p>Reclamante: {requests.find(r => String(r.id) === item.requestId)?.claimant_name}</p>
@@ -636,8 +587,7 @@ export default function Finance() {
             <div className="flex items-center gap-4">
               <div className={cn(
                 "w-16 h-16 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-xl",
-                financeData.companyType === 'serralheiro' ? "bg-blue-600" : 
-                financeData.companyType === 'serralheira' ? "bg-pink-600" : "bg-zinc-900"
+                financeData.companyType === 'serralheiro' ? "bg-blue-600" : "bg-zinc-900"
               )}>
                 RZV
               </div>
@@ -651,7 +601,7 @@ export default function Finance() {
             <div className="text-right">
               <p className="text-xs font-black text-zinc-400 uppercase tracking-widest mb-1">Data de Emissão</p>
               <p className="text-lg font-bold text-zinc-900">{format(new Date(), "dd/MM/yyyy")}</p>
-              <p className="text-zinc-500 text-[10px] mt-1 uppercase tracking-widest font-bold">Nº {financeData.requestId?.padStart(4, '0') || '0000'}</p>
+              <p className="text-zinc-500 text-[10px] mt-1 uppercase tracking-widest font-bold">Nº {docNumber}</p>
             </div>
           </div>
 
@@ -661,7 +611,7 @@ export default function Finance() {
               <h3 className="text-xs font-black text-blue-600 uppercase tracking-widest mb-4">Dados do Cliente</h3>
               <div className="space-y-2">
                 <p className="text-lg font-bold text-zinc-900">{financeData.clientName}</p>
-                <p className="text-sm text-zinc-600 font-bold">CNPJ: {financeData.cnpj}</p>
+                {financeData.cnpj && <p className="text-sm text-zinc-600 font-bold">CNPJ: {financeData.cnpj}</p>}
                 <div className="flex items-center gap-2 text-zinc-600 text-sm mt-2">
                   <User size={14} className="text-blue-500" />
                   <span>Solicitante: {financeData.requester}</span>
@@ -671,10 +621,11 @@ export default function Finance() {
             <div className="bg-zinc-50 p-6 rounded-2xl border border-zinc-100">
               <h3 className="text-xs font-black text-blue-600 uppercase tracking-widest mb-4">Informações da Empresa</h3>
               <div className="space-y-2 text-sm text-zinc-600">
-                <p className="font-bold text-zinc-900">RZV Engenharia LTDA</p>
-                <p>CNPJ: 00.000.000/0001-00</p>
-                <p className="text-[10px] text-blue-600 font-bold uppercase tracking-widest">CREA/ES ES-044985/D</p>
-                <p>contato@rzvengenharia.com.br</p>
+                <p className="font-bold text-zinc-900">{RZV.name}</p>
+                {RZV.cnpj && <p>CNPJ: {RZV.cnpj}</p>}
+                <p>{RZV.engineer}</p>
+                <p className="text-[10px] text-blue-600 font-bold uppercase tracking-widest">{RZV.crea}</p>
+                <p>{RZV.email}</p>
               </div>
             </div>
           </div>
@@ -722,11 +673,11 @@ export default function Finance() {
                           <div className="space-y-1">
                             <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-[10px] font-black uppercase tracking-wider">
                               <FileText size={10} />
-                              Ref: Laudo #{item.requestId}
+                              Chamado #{item.requestId}
                             </div>
                             <div className="text-[9px] text-blue-600 font-bold space-y-0.5 ml-0">
                               {requests.find(r => String(r.id) === item.requestId)?.budget_number && (
-                                <p>Nº Laudo: {requests.find(r => String(r.id) === item.requestId)?.budget_number}</p>
+                                <p>Pré-venda: {requests.find(r => String(r.id) === item.requestId)?.budget_number}</p>
                               )}
                               {requests.find(r => String(r.id) === item.requestId)?.claimant_name && (
                                 <p>Reclamante: {requests.find(r => String(r.id) === item.requestId)?.claimant_name}</p>

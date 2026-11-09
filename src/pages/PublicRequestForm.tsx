@@ -195,7 +195,7 @@ export default function PublicRequestForm() {
               {step === 1 && (
                 <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-5">
                   <Field label="Empresa">
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 gap-2">
                       {COMPANIES.map((c) => (
                         <Chip key={c.name} tone={c.color} active={companyChoice === c.name} onClick={() => chooseCompany(c.name)}>
                           {c.short}
@@ -207,7 +207,7 @@ export default function PublicRequestForm() {
 
                   {showUnits && (
                     <Field label="Unidade">
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="grid grid-cols-3 gap-2">
                         {UNITS.map((u) => (
                           <Chip key={u} active={formData.unit === u} onClick={() => { set({ unit: u }); setStepError(""); }}>{u}</Chip>
                         ))}
