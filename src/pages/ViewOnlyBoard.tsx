@@ -36,7 +36,7 @@ export default function ViewOnlyBoard() {
 
   const load = async () => {
     try {
-      const res = await fetch("/api/requests");
+      const res = await fetch("/api/public-board");
       if (!res.ok) throw new Error();
       setRequests(await res.json());
       setUpdatedAt(new Date());

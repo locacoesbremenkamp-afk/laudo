@@ -198,10 +198,11 @@ export default function AgreementTerm() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch(`/api/requests/${id}/agreement`, {
+      const res = await fetch(`/api/agreements`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          request_id: id,
           ...agreementData,
           resolutionItems
         })

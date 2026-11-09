@@ -21,7 +21,17 @@ if (!supabaseUrl || !supabaseKey) {
   process.exit(1);
 }
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Só no computador (npm run dev): com SUPABASE_SERVICE_ROLE_KEY no .env, o painel local
+// continua vendo tudo mesmo com o banco fechado (RLS). Nunca coloque essa chave na Vercel
+// com prefixo VITE_ nem no GitHub.
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabase = createClient(supabaseUrl, serviceKey || supabaseKey, { auth: { persistSession: false } });
+if (!serviceKey) console.log("[local] Sem SUPABASE_SERVICE_ROLE_KEY: depois do RLS, o painel local precisa de login.");
+
+const maskPhones = (text?: string | null) =>
+  String(text ?? "").replace(/(\+?\(?\d[\d\s().-]{6,}\d)/g, (m) =>
+    m.replace(/\D/g, "").length >= 8 ? "[telefone oculto]" : m
+  );
 
 async function startServer() {
   const app = express();
@@ -54,6 +64,16 @@ async function startServer() {
   });
 
   // API Routes
+  app.get("/api/public-board", async (_req, res) => {
+    const { data, error } = await supabase.from("requests").select("*").order("created_at", { ascending: false });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json((data || []).map((r: any) => ({
+      id: r.id, company_name: r.company_name, unit: r.unit ?? null, claimant_name: r.claimant_name,
+      budget_number: r.budget_number, urgency: r.urgency, status: r.status, created_at: r.created_at,
+      suggested_date: r.suggested_date, description: maskPhones(r.description),
+    })));
+  });
+
   app.get("/api/requests", async (req, res) => {
     const { data, error } = await supabase.from('requests').select('*').order('created_at', { ascending: false });
     if (error) return res.status(500).json({ error: error.message });
