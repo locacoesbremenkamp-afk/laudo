@@ -50,6 +50,7 @@ export default function RequestDetail() {
   const [request, setRequest] = useState<Request | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     fetchRequest();
@@ -59,9 +60,11 @@ export default function RequestDetail() {
     try {
       const res = await fetch(`/api/requests/${id}`);
       const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Não foi possível abrir o chamado.");
       setRequest(data);
     } catch (error) {
       console.error(error);
+      setLoadError(error instanceof Error ? error.message : "Erro ao abrir o chamado.");
     } finally {
       setLoading(false);
     }
@@ -123,7 +126,12 @@ Engenheiro Civil - RZV Engenharia`;
   };
 
   if (loading) return <div className="p-8 text-center text-zinc-500">Carregando...</div>;
-  if (!request) return <div className="p-8 text-center text-zinc-500">Chamado não encontrado.</div>;
+  if (!request) return (
+    <div className="p-8 text-center space-y-3">
+      <p className="text-zinc-700 font-medium">{loadError || "Chamado não encontrado."}</p>
+      <button onClick={() => window.location.reload()} className="text-sm text-blue-700 hover:underline">Tentar de novo</button>
+    </div>
+  );
 
   return (
     <div className="max-w-5xl mx-auto p-4 sm:p-8 space-y-6 sm:space-y-8 print:p-0 print:m-0">

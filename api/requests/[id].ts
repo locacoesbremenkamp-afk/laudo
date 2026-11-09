@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 // Rota interna: exige login. Usa o token do usuário nas consultas, então
 // as regras do banco (RLS) decidem o que cada um pode ver e alterar.
 async function authed(req: VercelRequest, res: VercelResponse) {
-  const token = String(req.headers.authorization || '').replace(/^Bearers+/i, '');
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   if (!token) { res.status(401).json({ error: 'Faça login para continuar.' }); return null; }
   const client = createClient(process.env.VITE_SUPABASE_URL!, process.env.VITE_SUPABASE_ANON_KEY!, {
     global: { headers: { Authorization: `Bearer ${token}` } },
