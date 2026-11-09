@@ -25,6 +25,7 @@ import { formatDistanceToNow, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { companyLabel } from "../lib/companies";
 import { printRequests } from "../lib/printRequests";
+import { matchesSearch } from "../lib/search";
 
 export const STATUS_COLUMNS = [
   { id: "Pedido Recebido", color: "bg-blue-500", text: "text-blue-600", bg: "bg-blue-50" },
@@ -150,11 +151,8 @@ export default function Dashboard() {
     }
   };
 
-  const filteredRequests = requests.filter(r => 
-    companyLabel(r).toLowerCase().includes(search.toLowerCase()) ||
-    r.responsible_name.toLowerCase().includes(search.toLowerCase()) ||
-    (r.budget_number && r.budget_number.includes(search))
-  );
+  // Busca em todas as informações do card (reclamante, telefones, endereço, descrição, datas...).
+  const filteredRequests = requests.filter(r => matchesSearch(r, search));
 
   const getUrgencyIcon = (urgency: string) => {
     switch (urgency) {
@@ -279,7 +277,7 @@ export default function Dashboard() {
             <Search className="absolute left-3 top-2.5 text-zinc-400" size={18} />
             <input 
               type="text" 
-              placeholder="Buscar chamado..."
+              placeholder="Buscar: nome, telefone, nº, endereço..."
               className="pl-10 pr-4 py-2 bg-white border border-zinc-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none w-full md:w-72 transition-all text-sm shadow-sm"
               value={search}
               onChange={e => setSearch(e.target.value)}

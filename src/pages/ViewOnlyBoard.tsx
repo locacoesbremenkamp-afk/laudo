@@ -6,6 +6,7 @@ import { cn } from "../lib/utils";
 import { companyLabel } from "../lib/companies";
 import { printRequests, maskPhones, type PrintableRequest } from "../lib/printRequests";
 import { STATUS_COLUMNS } from "./Dashboard";
+import { matchesSearch } from "../lib/search";
 
 type Req = PrintableRequest & { status: string; urgency: string; created_at: string };
 
@@ -55,12 +56,9 @@ export default function ViewOnlyBoard() {
   }, []);
 
   const visible = useMemo(() => {
-    const q = search.trim().toLowerCase();
     return requests.filter((r) => {
       if (!showCanceled && r.status === "Cancelado") return false;
-      if (!q) return true;
-      return [companyLabel(r), r.claimant_name, r.budget_number, String(r.id), r.description]
-        .some((v) => (v || "").toLowerCase().includes(q));
+      return matchesSearch(r, search);
     });
   }, [requests, search, showCanceled]);
 
