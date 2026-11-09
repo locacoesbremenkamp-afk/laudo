@@ -7,7 +7,16 @@ const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const MAX_IMAGE_SIDE = 1920;
 const JPEG_QUALITY = 0.82;
 
-export type UploadedFile = { url: string; type: "image" | "video" | "pdf" };
+export type UploadedFile = { url: string; type: "image" | "video" | "pdf" | "document" };
+
+// Alguns celulares/computadores não informam o tipo de .doc/.xls: deduz pela extensão.
+const EXT_TYPES: Record<string, string> = {
+  pdf: "application/pdf",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+};
 
 function safeName(name: string) {
   const base = name
@@ -56,6 +65,9 @@ function friendlyError(message: string) {
   if (/row-level security|unauthorized|403/i.test(message)) {
     return "O Supabase recusou o envio (permissão). Avise o administrador do sistema.";
   }
+  if (/mime type|not supported|invalid_mime/i.test(message)) {
+    return "Tipo de arquivo não aceito. Envie foto, vídeo, PDF, Word ou Excel.";
+  }
   if (/payload too large|exceeded the maximum/i.test(message)) {
     return "Arquivo grande demais. O limite é 50 MB por arquivo.";
   }
@@ -73,9 +85,11 @@ export async function uploadFile(file: File | Blob, folder: string, originalName
   }
 
   const name = originalName || (file instanceof File ? file.name : "arquivo");
-  const isImage = file.type.startsWith("image/");
-  const isVideo = file.type.startsWith("video/");
-  const isPdf = file.type === "application/pdf";
+  const ext = name.split(".").pop()?.toLowerCase() || "";
+  const mime = file.type || EXT_TYPES[ext] || "application/octet-stream";
+  const isImage = mime.startsWith("image/");
+  const isVideo = mime.startsWith("video/");
+  const isPdf = mime === "application/pdf";
 
   let body: Blob = file;
   let finalName = name;
@@ -90,12 +104,12 @@ export async function uploadFile(file: File | Blob, folder: string, originalName
 
   const path = `${folder}/${safeName(finalName)}`;
   const { error } = await supabase.storage.from(BUCKET).upload(path, body, {
-    contentType: body.type || file.type || "application/octet-stream",
+    contentType: body.type || mime,
     cacheControl: "31536000",
     upsert: false,
   });
   if (error) throw new Error(friendlyError(error.message));
 
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-  return { url: data.publicUrl, type: isVideo ? "video" : isPdf ? "pdf" : "image" };
+  return { url: data.publicUrl, type: isImage ? "image" : isVideo ? "video" : isPdf ? "pdf" : "document" };
 }

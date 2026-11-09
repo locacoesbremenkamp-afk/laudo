@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Send, MapPin, Camera, CheckCircle2, Loader2, X as XIcon, Download, Share2, Printer, Plus, Lock } from "lucide-react";
+import { Send, MapPin, Camera, CheckCircle2, Loader2, X as XIcon, Download, Share2, Printer, Plus, Lock, Check, AlertCircle, RotateCw } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { toPng } from "html-to-image";
 import { cn } from "../lib/utils";
@@ -9,6 +9,28 @@ import { COMPANIES, UNITS, isKnownCompany } from "../lib/companies";
 import { TicketCard, type Ticket } from "../components/TicketCard";
 
 const OTHER = "__outro__";
+
+// Fotos, vídeos, PDF e documentos do Office (pré-venda, nota, pedido...).
+const ACCEPT = "image/*,video/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx";
+
+type Att = {
+  key: string;
+  file: File;
+  preview: string;
+  status: "uploading" | "done" | "error";
+  url?: string;
+  type?: string;
+  error?: string;
+};
+
+const fileKind = (f: File) => {
+  const n = f.name.toLowerCase();
+  if (f.type.startsWith("video")) return "VÍDEO";
+  if (f.type === "application/pdf" || n.endsWith(".pdf")) return "PDF";
+  if (/\.docx?$/.test(n)) return "WORD";
+  if (/\.xlsx?$/.test(n)) return "EXCEL";
+  return "ARQUIVO";
+};
 
 const inputCls =
   "w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-sm";
@@ -49,7 +71,9 @@ export default function PublicRequestForm() {
   const [loading, setLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState("");
   const [stepError, setStepError] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
+  const [atts, setAtts] = useState<Att[]>([]);
+  const attsRef = useRef<Att[]>([]);
+  attsRef.current = atts;
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [companyChoice, setCompanyChoice] = useState<string>("");
   const [formData, setFormData] = useState({
@@ -69,9 +93,42 @@ export default function PublicRequestForm() {
   });
   const set = (patch: Partial<typeof formData>) => setFormData((prev) => ({ ...prev, ...patch }));
 
-  // Prévias das fotos (liberadas ao trocar a lista para não acumular memória)
-  const previews = useMemo(() => files.map((f) => (f.type.startsWith("image") ? URL.createObjectURL(f) : "")), [files]);
-  useEffect(() => () => previews.forEach((p) => p && URL.revokeObjectURL(p)), [previews]);
+  // ── Anexos: cada arquivo começa a carregar assim que é escolhido ─────────
+  useEffect(() => () => attsRef.current.forEach((a) => a.preview && URL.revokeObjectURL(a.preview)), []);
+
+  const patchAtt = (key: string, patch: Partial<Att>) =>
+    setAtts((prev) => prev.map((a) => (a.key === key ? { ...a, ...patch } : a)));
+
+  const startUpload = (att: Att) => {
+    patchAtt(att.key, { status: "uploading", error: undefined });
+    uploadFile(att.file, "uploads")
+      .then((res) => patchAtt(att.key, { status: "done", url: res.url, type: res.type }))
+      .catch((err: any) => patchAtt(att.key, { status: "error", error: err?.message || "Falha no envio." }));
+  };
+
+  const addFiles = (list: FileList | null) => {
+    if (!list || list.length === 0) return;
+    const fresh: Att[] = Array.from(list).map((file) => ({
+      key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      file,
+      preview: file.type.startsWith("image") ? URL.createObjectURL(file) : "",
+      status: "uploading",
+    }));
+    setStepError("");
+    setAtts((prev) => [...prev, ...fresh]);
+    fresh.forEach(startUpload);
+  };
+
+  const removeAtt = (key: string) =>
+    setAtts((prev) => {
+      const a = prev.find((x) => x.key === key);
+      if (a?.preview) URL.revokeObjectURL(a.preview);
+      return prev.filter((x) => x.key !== key);
+    });
+
+  const uploadingCount = atts.filter((a) => a.status === "uploading").length;
+  const errorCount = atts.filter((a) => a.status === "error").length;
+  const doneAtts = atts.filter((a) => a.status === "done");
 
   const chooseCompany = (choice: string) => {
     setCompanyChoice(choice);
@@ -115,35 +172,21 @@ export default function PublicRequestForm() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const uploadFiles = async () => {
-    const uploaded: { url: string; type: string }[] = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      setUploadProgress(`Enviando arquivo ${i + 1} de ${files.length}...`);
-      try {
-        const res = await uploadFile(file, "uploads");
-        uploaded.push({ url: res.url, type: res.type });
-      } catch (error: any) {
-        console.error("Error uploading file:", error);
-        // Interrompe para não salvar a solicitação sem as fotos.
-        throw new Error(`Não foi possível enviar "${file.name}".\n${error?.message || ""}`);
-      }
-    }
-    setUploadProgress("");
-    return uploaded;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // O chamado só sai pelo botão do último passo (Enter/"Ir" no teclado não envia).
+    if (step < 3) return;
     const err = validate(1) || validate(2);
     if (err) {
       setStepError(err);
       setStep(validate(1) ? 1 : 2);
       return;
     }
+    if (uploadingCount > 0) return setStepError("Aguarde os arquivos terminarem de carregar.");
+    if (errorCount > 0) return setStepError("Há arquivo com erro. Toque em \"Tentar de novo\" ou remova o arquivo antes de enviar.");
     setLoading(true);
     try {
-      const attachments = await uploadFiles();
+      const attachments = doneAtts.map((a) => ({ url: a.url!, type: a.type! }));
       setUploadProgress("Registrando chamado...");
       const res = await fetch("/api/requests", {
         method: "POST",
@@ -156,8 +199,8 @@ export default function PublicRequestForm() {
         ...formData,
         id: data.id,
         created_at: new Date().toISOString(),
-        attachmentCount: files.length,
-        thumbs: previews.filter(Boolean),
+        attachmentCount: doneAtts.length,
+        thumbs: doneAtts.map((a) => a.preview).filter(Boolean),
       });
       window.scrollTo({ top: 0 });
     } catch (error: any) {
@@ -182,7 +225,14 @@ export default function PublicRequestForm() {
           <p className="text-zinc-500 text-sm sm:text-base">Preencha os dados abaixo. Ao final você recebe o card do chamado para enviar pelo WhatsApp.</p>
         </div>
 
-        <form onSubmit={handleSubmit} noValidate className="bg-white rounded-2xl sm:rounded-3xl shadow-xl shadow-zinc-200/50 overflow-hidden border border-zinc-100">
+        <form
+          onSubmit={handleSubmit}
+          onKeyDown={(e) => {
+            // Enter num campo não envia o formulário (no celular, a tecla "Ir" fazia o chamado sair sem anexos).
+            if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "TEXTAREA") e.preventDefault();
+          }}
+          noValidate
+          className="bg-white rounded-2xl sm:rounded-3xl shadow-xl shadow-zinc-200/50 overflow-hidden border border-zinc-100">
           <div className="h-1.5 bg-zinc-100 w-full flex">
             <div className="h-full bg-blue-600 transition-all duration-500" style={{ width: `${(step / 3) * 100}%` }} />
           </div>
@@ -296,36 +346,69 @@ export default function PublicRequestForm() {
                     <input
                       type="file"
                       multiple
-                      accept="image/*,video/*,application/pdf"
+                      accept={ACCEPT}
                       className="hidden"
                       id="file-upload"
-                      onChange={(e) => { const sel = e.target.files; if (sel) setFiles((prev) => [...prev, ...Array.from(sel)]); e.target.value = ""; }}
+                      onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }}
                     />
                   </label>
 
-                  {files.length > 0 && (
-                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                      {files.map((file, i) => (
-                        <div key={i} className="aspect-square rounded-lg sm:rounded-xl overflow-hidden bg-zinc-100 border border-zinc-200 relative group">
-                          {previews[i] ? (
-                            <img src={previews[i]} alt={file.name} className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center gap-1 bg-zinc-900 text-white text-[10px] p-2 text-center">
-                              <span className="font-bold">{file.type.startsWith("video") ? "VÍDEO" : file.type === "application/pdf" ? "PDF" : "ARQUIVO"}</span>
-                              <span className="opacity-70 line-clamp-2 break-all">{file.name}</span>
-                            </div>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
-                            aria-label={`Remover ${file.name}`}
-                            className="absolute top-1 right-1 bg-red-500 text-white p-1.5 rounded-full shadow sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
-                          >
-                            <XIcon size={12} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
+                  {atts.length > 0 && (
+                    <>
+                      <p className="text-xs font-semibold text-zinc-600" aria-live="polite">
+                        {uploadingCount > 0
+                          ? `Carregando ${uploadingCount} de ${atts.length} arquivo(s)... aguarde para enviar.`
+                          : errorCount > 0
+                            ? `${errorCount} arquivo(s) com erro. Tente de novo ou remova.`
+                            : `${doneAtts.length} arquivo(s) carregado(s). Pode enviar.`}
+                      </p>
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                        {atts.map((a) => (
+                          <div key={a.key} className={cn(
+                            "aspect-square rounded-lg sm:rounded-xl overflow-hidden bg-zinc-100 border relative group",
+                            a.status === "error" ? "border-red-400" : a.status === "done" ? "border-emerald-400" : "border-zinc-200"
+                          )}>
+                            {a.preview ? (
+                              <img src={a.preview} alt={a.file.name} className={cn("w-full h-full object-cover", a.status === "uploading" && "opacity-50")} />
+                            ) : (
+                              <div className="w-full h-full flex flex-col items-center justify-center gap-1 bg-zinc-900 text-white text-[10px] p-2 text-center">
+                                <span className="font-bold">{fileKind(a.file)}</span>
+                                <span className="opacity-70 line-clamp-2 break-all">{a.file.name}</span>
+                              </div>
+                            )}
+
+                            {a.status === "uploading" && (
+                              <div className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[10px] font-semibold py-1 flex items-center justify-center gap-1">
+                                <Loader2 size={11} className="animate-spin" /> Carregando
+                              </div>
+                            )}
+                            {a.status === "done" && (
+                              <div className="absolute bottom-1 left-1 bg-emerald-600 text-white rounded-full p-1 shadow" title="Carregado">
+                                <Check size={11} />
+                              </div>
+                            )}
+                            {a.status === "error" && (
+                              <div className="absolute inset-0 bg-red-50/95 flex flex-col items-center justify-center gap-1.5 p-2 text-center">
+                                <AlertCircle size={16} className="text-red-600" />
+                                <span className="text-[10px] text-red-700 leading-tight line-clamp-3">{a.error}</span>
+                                <button type="button" onClick={() => startUpload(a)} className="text-[10px] font-bold text-red-700 underline flex items-center gap-1">
+                                  <RotateCw size={10} /> Tentar de novo
+                                </button>
+                              </div>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => removeAtt(a.key)}
+                              aria-label={`Remover ${a.file.name}`}
+                              className="absolute top-1 right-1 bg-red-500 text-white p-1.5 rounded-full shadow sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                            >
+                              <XIcon size={12} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </>
                   )}
                 </motion.div>
               )}
@@ -346,9 +429,21 @@ export default function PublicRequestForm() {
                   Próximo passo
                 </button>
               ) : (
-                <button type="submit" disabled={loading} className="flex-[2] py-3 sm:py-4 bg-blue-700 text-white rounded-xl sm:rounded-2xl font-semibold hover:bg-blue-800 transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-sm sm:text-base">
-                  {loading ? <Loader2 className="animate-spin" /> : <Send size={18} />}
-                  {uploadProgress || (loading ? "Enviando..." : "Enviar solicitação")}
+                <button
+                  type="submit"
+                  disabled={loading || uploadingCount > 0 || errorCount > 0}
+                  className="flex-[2] py-3 sm:py-4 bg-blue-700 text-white rounded-xl sm:rounded-2xl font-semibold hover:bg-blue-800 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
+                >
+                  {loading || uploadingCount > 0 ? <Loader2 className="animate-spin" /> : <Send size={18} />}
+                  {loading
+                    ? (uploadProgress || "Enviando...")
+                    : uploadingCount > 0
+                      ? "Aguardando arquivos..."
+                      : errorCount > 0
+                        ? "Resolva os arquivos com erro"
+                        : doneAtts.length === 0
+                          ? "Enviar sem anexos"
+                          : `Enviar solicitação (${doneAtts.length} anexo${doneAtts.length > 1 ? "s" : ""})`}
                 </button>
               )}
             </div>

@@ -250,13 +250,18 @@ Engenheiro Civil - RZV Engenharia`;
                           className="w-full h-full object-cover" 
                           referrerPolicy="no-referrer"
                           loading="lazy"
+                          alt={`Anexo ${i + 1}`}
                           onError={(e) => {
                             const target = e.target as HTMLImageElement;
-                            target.src = "https://picsum.photos/seed/error/400/400";
+                            target.onerror = null;
+                            target.style.display = "none";
                           }}
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-zinc-900 text-white font-bold text-xs">VIDEO</div>
+                        <div className="w-full h-full flex flex-col items-center justify-center gap-1 bg-zinc-900 text-white font-bold text-xs p-2 text-center">
+                          <span>{att.type === "video" ? "VÍDEO" : att.type === "pdf" ? "PDF" : "DOCUMENTO"}</span>
+                          <span className="font-normal text-[10px] opacity-70">toque para abrir</span>
+                        </div>
                       )}
                       <a 
                         href={att.url} 
