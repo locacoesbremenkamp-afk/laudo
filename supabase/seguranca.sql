@@ -67,7 +67,37 @@ begin
 end $$;
 
 
--- 4. Formulário público: cria o chamado e os anexos, sem poder ler nada
+-- 4/5. Quadro público e formulário (respeitam o tipo real de cada coluna)
+-- Quadro público: devolve tudo como texto (datas em formato ISO).
+drop function if exists public.public_board();
+create function public.public_board()
+returns table (
+  id bigint, company_name text, unit text, claimant_name text, budget_number text,
+  urgency text, status text, created_at text, suggested_date text, description text
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select r.id::bigint,
+         r.company_name::text,
+         r.unit::text,
+         r.claimant_name::text,
+         r.budget_number::text,
+         r.urgency::text,
+         r.status::text,
+         to_json(r.created_at) #>> '{}',
+         nullif(to_json(r.suggested_date) #>> '{}', ''),
+         r.description::text
+  from requests r
+  order by r.created_at desc
+$$;
+revoke all on function public.public_board() from public;
+grant execute on function public.public_board() to anon, authenticated;
+
+-- Formulário público: converte cada campo para o tipo real da coluna
+-- (jsonb_populate_record) e ignora campos vazios.
 create or replace function public.create_request(payload jsonb)
 returns bigint
 language plpgsql
@@ -75,30 +105,30 @@ security definer
 set search_path = public
 as $$
 declare
+  clean jsonb;
+  rec requests;
   new_id bigint;
 begin
   if coalesce(trim(payload->>'company_name'), '') = '' or coalesce(trim(payload->>'description'), '') = '' then
     raise exception 'Preencha a empresa e a descrição do problema.';
   end if;
 
+  select coalesce(jsonb_object_agg(key, value), '{}'::jsonb) into clean
+  from jsonb_each(payload)
+  where key in ('company_name','unit','responsible_name','phone','role','address','lat','lng',
+                'claimant_name','claimant_phone','budget_number','description','urgency','suggested_date')
+    and value not in ('null'::jsonb, '""'::jsonb);
+
+  rec := jsonb_populate_record(null::requests, clean);
+
   insert into requests (
     company_name, unit, responsible_name, phone, role, address, lat, lng,
     claimant_name, claimant_phone, budget_number, description, urgency, suggested_date
   ) values (
-    left(payload->>'company_name', 200),
-    left(nullif(payload->>'unit', ''), 100),
-    left(payload->>'responsible_name', 200),
-    left(payload->>'phone', 50),
-    left(payload->>'role', 200),
-    left(payload->>'address', 500),
-    nullif(payload->>'lat', '')::float8,
-    nullif(payload->>'lng', '')::float8,
-    left(payload->>'claimant_name', 200),
-    left(payload->>'claimant_phone', 50),
-    left(payload->>'budget_number', 100),
-    left(payload->>'description', 5000),
-    coalesce(nullif(payload->>'urgency', ''), 'Média'),
-    nullif(payload->>'suggested_date', '')::date
+    left(rec.company_name, 200), left(rec.unit, 100), left(rec.responsible_name, 200), left(rec.phone, 50),
+    left(rec.role, 200), left(rec.address, 500), rec.lat, rec.lng,
+    left(rec.claimant_name, 200), left(rec.claimant_phone, 50), left(rec.budget_number, 100),
+    left(rec.description, 5000), coalesce(rec.urgency, 'Média'), rec.suggested_date
   )
   returning id into new_id;
 
@@ -111,30 +141,8 @@ begin
 
   return new_id;
 end $$;
-
 revoke all on function public.create_request(jsonb) from public;
 grant execute on function public.create_request(jsonb) to anon, authenticated;
-
--- 5. Quadro público (/acompanhamento): só campos seguros
-drop function if exists public.public_board();
-create function public.public_board()
-returns table (
-  id bigint, company_name text, unit text, claimant_name text, budget_number text,
-  urgency text, status text, created_at timestamptz, suggested_date date, description text
-)
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select r.id::bigint, r.company_name::text, r.unit::text, r.claimant_name::text, r.budget_number::text,
-         r.urgency::text, r.status::text, r.created_at::timestamptz, r.suggested_date::date, r.description::text
-  from requests r
-  order by r.created_at desc
-$$;
-
-revoke all on function public.public_board() from public;
-grant execute on function public.public_board() to anon, authenticated;
 
 -- Conferência: contas da equipe
 select email, added_at from public.team_members order by added_at;
