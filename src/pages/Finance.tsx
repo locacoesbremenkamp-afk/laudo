@@ -722,7 +722,9 @@ export default function Finance() {
           <div className="mt-auto pt-12 border-t border-zinc-100">
             <div className="grid grid-cols-2 gap-12">
               <div className="flex flex-col items-center justify-end">
+                <img src="/assinatura-renzo.png" alt="Assinatura de Renzo Vetorazzi" className="h-16 object-contain -mb-1" />
                 <div className="w-full border-b border-zinc-300 mb-2"></div>
+                <p className="text-xs font-bold text-zinc-700">{RZV.engineer}</p>
                 <p className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Responsável RZV</p>
               </div>
               <div className="flex flex-col items-center justify-end">

@@ -6,3 +6,4 @@ dist
 server.log
 *.db
 .vercel
+uploads/

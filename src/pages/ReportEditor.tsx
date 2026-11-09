@@ -20,6 +20,9 @@ import { SignaturePad, SignaturePadRef } from "../components/SignaturePad";
 import { toPng } from 'html-to-image';
 import { jsPDF } from "jspdf";
 import { uploadFile } from "../lib/storage";
+
+// Assinatura padrão do responsável técnico (public/assinatura-renzo.png).
+const DEFAULT_SIGNATURE = "/assinatura-renzo.png";
 import { companyLabel } from "../lib/companies";
 
 // Mostrado quando a imagem de um anexo não existe mais no armazenamento.
@@ -361,6 +364,19 @@ export default function ReportEditor() {
     }
   };
 
+  const useDefaultSignature = () => {
+    sigCanvas.current?.fromDataURL(DEFAULT_SIGNATURE);
+  };
+
+  // Laudo sem assinatura salva: já entra com a assinatura padrão do responsável técnico.
+  useEffect(() => {
+    if (loading || reportData.signature) return;
+    const t = setTimeout(() => {
+      if (sigCanvas.current?.isEmpty()) useDefaultSignature();
+    }, 150);
+    return () => clearTimeout(t);
+  }, [loading]);
+
   const clearSignature = () => {
     sigCanvas.current?.clear();
   };
@@ -602,13 +618,20 @@ export default function ReportEditor() {
                       }}
                     />
                   </div>
-                  <button 
+                  <button
                     onClick={clearSignature}
+                    aria-label="Apagar assinatura"
                     className="absolute top-2 right-2 sm:right-auto sm:left-[calc(50%+210px)] p-2 bg-white text-zinc-400 hover:text-red-500 rounded-full shadow-sm border border-zinc-100 transition-colors"
                   >
                     <Eraser size={16} />
                   </button>
                 </div>
+                <button
+                  onClick={useDefaultSignature}
+                  className="text-xs font-semibold text-blue-700 hover:text-blue-900 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
+                >
+                  Usar assinatura de Renzo Vetorazzi
+                </button>
 
                 <div className="text-center">
                   <p className="font-black text-zinc-900 text-lg">RZV ENGENHARIA</p>
@@ -719,6 +742,7 @@ export default function ReportEditor() {
                 
                 <div className="text-center w-80 border-t border-black pt-2">
                   <p className="font-black text-black text-lg">RZV ENGENHARIA</p>
+                  <p className="text-xs text-black mt-1">Eng. Renzo Vetorazzi B. Gozze · CREA-ES 044985/D</p>
                   <p className="text-xs text-black uppercase tracking-widest mt-1">Responsável Técnico Autorizado</p>
                 </div>
               </section>

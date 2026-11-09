@@ -43,7 +43,10 @@ export const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
             const img = new Image();
             img.onload = () => {
               ctx.clearRect(0, 0, canvas.width, canvas.height);
-              ctx.drawImage(img, 0, 0);
+              // Ajusta a imagem ao quadro (sem cortar) e centraliza.
+              const scale = Math.min(1, (canvas.width * 0.9) / img.width, (canvas.height * 0.85) / img.height);
+              const w = img.width * scale, h = img.height * scale;
+              ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
               setIsEmpty(false);
             };
             img.src = dataUrl;
